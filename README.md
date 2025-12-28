@@ -60,12 +60,12 @@ These files represent the authoritative source of truth for the TechHealth data 
 
 ---
 
-### prompt/hybrid_sql_master_prompt.md
+### prompt/
 
-Defines the Hybrid SQL Master control system.
-This specification governs how business requests are generated, how SQL responses are evaluated, how difficulty progresses, and how performance is scored.
+Contains the full specification of the Hybrid SQL Master control system.
 
-It allows analytical sessions to be executed using either T‑SQL or PostgreSQL syntax while operating on the same underlying data model.
+This layer governs how business requests are generated, how SQL responses are evaluated, how difficulty progresses, and how performance is scored.  
+It allows analytical sessions to be executed using either T-SQL or PostgreSQL syntax while operating on the same underlying data model.
 
 ---
 
