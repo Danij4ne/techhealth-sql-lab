@@ -1,5 +1,19 @@
 # TechHealth SQL Lab
 
+![SQL Server](https://img.shields.io/badge/SQL%20Server-T--SQL-B3261E?style=for-the-badge&logo=microsoftsqlserver&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-3366CC?style=for-the-badge&logo=postgresql&logoColor=white)
+![Relational Data](https://img.shields.io/badge/Relational%20Data-Enterprise%20Model-1E293B?style=for-the-badge)
+![Architecture](https://img.shields.io/badge/Architecture-Session%20Driven-6D28D9?style=for-the-badge)
+![Query Engine](https://img.shields.io/badge/Query%20Engine-Hybrid%20SQL-7C3AED?style=for-the-badge)
+![Performance](https://img.shields.io/badge/Performance-Tracking-4F46E5?style=for-the-badge)
+![Analytics](https://img.shields.io/badge/Focus-SQL%20Analytics-14B8A6?style=for-the-badge)
+![Data Grade](https://img.shields.io/badge/Data-Enterprise%20Grade-0F766E?style=for-the-badge)
+![Daily Practice](https://img.shields.io/badge/Practice-Daily%20Challenges-1D4ED8?style=for-the-badge)
+![Commit Activity](https://img.shields.io/github/commit-activity/m/danij4ne/techhealth-sql-lab?style=for-the-badge)
+![Last Commit](https://img.shields.io/github/last-commit/danij4ne/techhealth-sql-lab?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-334155?style=for-the-badge)
+
+
 TechHealth SQL Lab is a structured SQL analytics environment built around a realistic enterprise database and a controlled session-based challenge system.
 It simulates corporate reporting, operational analytics, and technical SQL interview scenarios over a single, consistent dataset deployed on multiple SQL engines.
 
