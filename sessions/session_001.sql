@@ -514,8 +514,57 @@ ORDER BY
 
 -- My SQL:
 
+WITH june_steps_by_customer AS (
+    SELECT
+        h.user_id,
+        AVG(h.avg_daily_steps) AS june_avg_daily_steps
+    FROM HealthMetrics h
+    WHERE h.month_date >= '2023-06-01'
+      AND h.month_date <= '2023-06-30'
+    GROUP BY
+        h.user_id
+),
+overall_june_steps AS (
+    SELECT
+        AVG(j.june_avg_daily_steps) AS overall_june_avg_steps
+    FROM june_steps_by_customer j
+),
+workouts_by_customer AS (
+    SELECT
+        d.user_id,
+        SUM(d.total_workouts_recorded) AS total_workouts_recorded
+    FROM Devices d
+    GROUP BY
+        d.user_id
+),
+overall_workouts AS (
+    SELECT
+        AVG(w.total_workouts_recorded) AS overall_avg_workouts
+    FROM workouts_by_customer w
+)
+SELECT
+    j.user_id AS customer_id,
+    j.june_avg_daily_steps,
+    COALESCE(w.total_workouts_recorded, 0) AS total_workouts_recorded,
+    CASE
+        WHEN j.june_avg_daily_steps > s.overall_june_avg_steps
+         AND COALESCE(w.total_workouts_recorded, 0) > o.overall_avg_workouts
+        THEN 'High Activity'
+        ELSE 'Not High Activity'
+    END AS activity_classification
+FROM june_steps_by_customer j
+CROSS JOIN overall_june_steps s
+CROSS JOIN overall_workouts o
+LEFT JOIN workouts_by_customer w
+    ON w.user_id = j.user_id
+ORDER BY
+    j.user_id;
+
+
 
 -- SQL Correction:
+
+--Approved ✅
  
 
 
