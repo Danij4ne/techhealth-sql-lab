@@ -1,5 +1,17 @@
 # TechHealth SQL Lab
 
+
+<p align="center">
+  <img 
+    src="https://github.com/user-attachments/assets/e3fd2495-f052-4ed5-8832-eac4b8e43519"
+    alt="TechHealth SQL Lab"
+    style="max-width: 100%; height: auto;"
+  />
+</p>
+
+
+
+
 ![SQL Server](https://img.shields.io/badge/SQL%20Server-T--SQL-B3261E?style=for-the-badge&logo=microsoftsqlserver&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-3366CC?style=for-the-badge&logo=postgresql&logoColor=white)
 ![Relational Data](https://img.shields.io/badge/Relational%20Data-Enterprise%20Model-1E293B?style=for-the-badge)
