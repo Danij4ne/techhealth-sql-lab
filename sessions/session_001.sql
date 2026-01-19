@@ -570,24 +570,91 @@ ORDER BY
 
 -- Request 13
 -- Question:
+
+-- Request 13/25 [CORPORATE]
+-- Business question:
+-- For the last full calendar month (2025-11-01 to 2025-11-30),
+-- report total revenue and total units sold by product category.
+-- Return one row per product category.
+
+-- Expected output:
+-- - product category
+-- - total revenue
+-- - total units sold
+
  
 
 -- My SQL:
 
+ WITH total_units AS (
+    SELECT product_category , SUM(quantity) AS units
+    FROM sales
+    WHERE sale_date >= '2025-11-01' AND sale_date <  '2025-12-01'
+    GROUP BY product_category
+)
+SELECT s.product_category , SUM(s.total_amount) AS total_revenue , t.units
+FROM sales s
+JOIN total_units t
+ON s.product_category = t.product_category 
+WHERE s.sale_date >= '2025-11-01'
+  AND s.sale_date <  '2025-12-01'
+GROUP BY s.product_category , t.units 
+
 
 -- SQL Correction:
  
-
+--Approved ✅
 
 -- Request 14
 -- Question:
- 
+
+-- Request 14/25 [INTERVIEW]
+-- Business question:
+-- Identify customers whose average resting heart rate in June 2023
+-- is higher than the overall June 2023 average resting heart rate.
+-- Return one row per qualifying customer.
+
+-- Expected output:
+-- - customer identifier
+-- - average resting heart rate
+-- - overall average resting heart rate
+
+
 
 -- My SQL:
+
+;WITH june AS (
+    SELECT
+        user_id,
+        avg_resting_heart_rate
+    FROM HealthMetrics
+    WHERE month_date >= '2023-06-01'
+      AND month_date <  '2023-07-01'
+),
+user_avg AS (
+    SELECT
+        user_id,
+        AVG(avg_resting_heart_rate) AS avg_rest_user
+    FROM june
+    GROUP BY user_id
+),
+overall_avg AS (
+    SELECT
+        AVG(avg_resting_heart_rate) AS avg_rest_overall
+    FROM june
+)
+SELECT
+    u.user_id,
+    u.avg_rest_user,
+    o.avg_rest_overall
+FROM user_avg u
+CROSS JOIN overall_avg o
+WHERE u.avg_rest_user > o.avg_rest_overall;
 
 
 -- SQL Correction:
  
+--Approved ✅
 
 
 -- Request 15
