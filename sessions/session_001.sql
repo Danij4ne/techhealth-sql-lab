@@ -659,13 +659,47 @@ WHERE u.avg_rest_user > o.avg_rest_overall;
 
 -- Request 15
 -- Question:
+
+-- Request 15/25 [CORPORATE]
+-- Business question:
+-- For the period 2025-04-01 to 2025-05-31,
+-- report revenue by payment method, plus the share of total revenue each payment method represents.
+-- Return one row per payment method.
+
+-- Expected output:
+-- - payment method
+-- - total revenue
+-- - revenue share of total (0 to 1)
+
  
 
 -- My SQL:
 
+WITH period_sales AS (
+    SELECT *
+    FROM sales
+    WHERE sale_date >= '2025-04-01'
+      AND sale_date <= '2025-05-31'
+),
+revenue_share AS (
+    SELECT
+        payment_method,
+        SUM(total_amount) AS revenue_method,
+        SUM(SUM(total_amount)) OVER () AS total_revenue,
+        SUM(total_amount) * 1.0 / SUM(SUM(total_amount)) OVER () AS revenue_share
+    FROM period_sales
+    GROUP BY payment_method
+)
+SELECT
+    payment_method,
+    revenue_method,
+    revenue_share
+FROM revenue_share;
+
 
 -- SQL Correction:
  
+ --Approved ✅
 
 
 -- Request 16
