@@ -704,13 +704,57 @@ FROM revenue_share;
 
 -- Request 16
 -- Question:
+
+-- Request 16/25 [INTERVIEW]
+-- Business question:
+-- For each country, determine the average number of devices owned per customer.
+-- Return one row per country.
+
+-- Expected output:
+-- - country
+-- - average devices per customer
+
  
 
 -- My SQL:
 
+WITH devices_per_customer AS (
+    SELECT user_id , COUNT(DISTINCT device_id ) AS devices_count
+    FROM devices 
+    GROUP BY user_id
+)
+SELECT c.country , AVG(devices_count) AS avg_devices
+FROM customers c
+JOIN devices_per_customer d
+ON c.user_id = d.user_id
+GROUP BY c.country 
+
+
 
 -- SQL Correction:
  
+--Correct ✅
+--Only small improvement: 
+--cast to decimal to avoid integer average surprises (SQL Server can truncate if both sides are ints).
+
+WITH devices_per_customer AS (
+    SELECT
+        d.user_id,
+        COUNT(DISTINCT d.device_id) AS devices_count
+    FROM dbo.Devices d
+    GROUP BY
+        d.user_id
+)
+SELECT
+    c.country,
+    AVG(CAST(dpc.devices_count AS DECIMAL(18,2))) AS average_devices_per_customer
+FROM dbo.Customers c
+JOIN devices_per_customer dpc
+    ON dpc.user_id = c.user_id
+GROUP BY
+    c.country
+ORDER BY
+    c.country ASC;
 
 
 -- Request 17
