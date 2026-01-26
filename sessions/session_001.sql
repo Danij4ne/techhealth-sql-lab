@@ -809,14 +809,33 @@ ORDER BY revenue_rank, total_money DESC;
 
 -- Request 18
 -- Question:
+
+-- Request 18/25 [INTERVIEW]
+-- Business question:
+-- For each customer, calculate the percentage of their devices
+-- that have sleep tracking enabled.
+-- Return one row per customer.
+
+-- Expected output:
+-- - customer identifier
+-- - percentage of devices with sleep tracking enabled (0 to 1)
  
 
 -- My SQL:
 
+SELECT
+    user_id,
+    AVG(CAST(sleep_tracking_enabled AS decimal(10,4))) AS pct_sleep_tracking
+FROM dbo.Devices
+GROUP BY user_id;
+
+
+
+
 
 -- SQL Correction:
  
-
+--Approved ✅
 
 -- Request 19
 -- Question:
