@@ -727,13 +727,13 @@ SELECT c.country , AVG(devices_count) AS avg_devices
 FROM customers c
 JOIN devices_per_customer d
 ON c.user_id = d.user_id
-GROUP BY c.country 
+GROUP BY c.country ;
 
 
 
 -- SQL Correction:
  
---Correct ✅
+--Approved ✅
 --Only small improvement: 
 --cast to decimal to avoid integer average surprises (SQL Server can truncate if both sides are ints).
 
@@ -759,11 +759,51 @@ ORDER BY
 
 -- Request 17
 -- Question:
+
+-- Request 17/25 [CORPORATE]
+-- Business question:
+-- For the period 2025-04-01 to 2025-05-31,
+-- report the top 2 regions by total revenue.
+-- If there is a tie at rank 2, include all tied regions.
+
+-- Expected output:
+-- - region
+-- - total revenue
+-- - revenue rank
+
+
  
 -- My SQL:
 
+WITH total_revenue AS (
+    SELECT
+        region,
+        SUM(total_amount) AS total_money
+    FROM sales
+    WHERE sale_date >= '2025-04-01'
+      AND sale_date <= '2025-05-31'
+    GROUP BY region
+),
+ranked_regions AS (
+    SELECT
+        region,
+        total_money,
+        DENSE_RANK() OVER (ORDER BY total_money DESC) AS revenue_rank
+    FROM total_revenue
+)
+SELECT
+    region,
+    total_money,
+    revenue_rank
+FROM ranked_regions
+WHERE revenue_rank <= 2
+ORDER BY revenue_rank, total_money DESC;
+
+
 
 -- SQL Correction:
+
+--Approved ✅
  
 
 
