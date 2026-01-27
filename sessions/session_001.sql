@@ -839,12 +839,46 @@ GROUP BY user_id;
 
 -- Request 19
 -- Question:
- 
+
+-- Request 19/25 [CORPORATE]
+-- Business question:
+-- For the period 2025-04-01 to 2025-05-31,
+-- report the number of customers and total revenue per region.
+-- Return one row per region.
+
+-- Expected output:
+-- - region
+-- - total customers
+-- - total revenue
 
 -- My SQL:
 
+WITH dates AS (
+    SELECT *
+    FROM sales 
+    WHERE sale_date >= '2025-04-01' AND sale_date <= '2025-05-31'
+),
+num_customers AS (
+    SELECT region , COUNT(DISTINCT user_id ) AS users
+    FROM dates
+    GROUP BY region
+),
+total_revenue AS (
+    SELECT region , SUM(total_amount) AS total
+    FROM dates
+    GROUP BY region
+)
+SELECT t.region , t.total , n.users
+FROM total_revenue t
+JOIN num_customers n
+ON t.region = n.region 
+
+
+
  
 -- SQL Correction:
+
+--Approved ✅
 
 
 -- Request 20
