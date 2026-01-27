@@ -17,8 +17,6 @@
 ![Analytics](https://img.shields.io/badge/Focus-SQL%20Analytics-14B8A6?style=for-the-badge)
 ![Data Grade](https://img.shields.io/badge/Data-Enterprise%20Grade-0F766E?style=for-the-badge)
 ![Daily Practice](https://img.shields.io/badge/Practice-Daily%20Challenges-1D4ED8?style=for-the-badge)
-![Commit Activity](https://img.shields.io/github/commit-activity/m/danij4ne/techhealth-sql-lab?style=for-the-badge)
-![Last Commit](https://img.shields.io/github/last-commit/danij4ne/techhealth-sql-lab?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-334155?style=for-the-badge)
 
 
@@ -114,6 +112,17 @@ TechHealth SQL Lab combines three elements into a single analytical system:
 - A session‑based record of analytical output and quality metrics
 
 Together, these components create a controlled environment for producing, validating, and tracking SQL analytics across multiple database engines.
+
+---
+
+## Data Source
+
+The base database schema is adapted from the IBM Data Engineering Professional Certificate
+and is used strictly for educational and portfolio demonstration purposes.
+
+All analytical logic, system architecture, multi-engine compatibility, session tracking,
+evaluation framework, and repository structure were independently designed and implemented
+as part of this project.
 
 ---
 
