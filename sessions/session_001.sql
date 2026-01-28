@@ -883,18 +883,85 @@ ON t.region = n.region
 
 -- Request 20
 -- Question:
+
+-- Request 20/25 [INTERVIEW]
+-- Business question:
+-- For each customer, calculate their “purchase concentration” in 2025:
+-- the share of their 2025 revenue that comes from their single highest-revenue product category.
+-- Return one row per customer.
+
+-- Expected output:
+-- - customer identifier
+-- - total revenue in 2025
+-- - top product category in 2025
+-- - revenue from top category in 2025
+-- - concentration share (0 to 1)
+
  
 
 -- My SQL:
 
+WITH dates AS (
+    SELECT *
+    FROM sales 
+    WHERE sale_date >= '2025-01-01'
+      AND sale_date <  '2026-01-01'
+),
+
+total_revenue AS (
+    SELECT
+        user_id,
+        SUM(total_amount) AS total_money
+    FROM dates
+    GROUP BY user_id
+),
+
+cat_revenue AS (
+    SELECT
+        user_id,
+        product_category,
+        SUM(total_amount) AS category_money
+    FROM dates
+    GROUP BY user_id, product_category
+),
+
+best_product_category AS (
+    SELECT
+        c.user_id,
+        c.product_category,
+        c.category_money,
+        ROW_NUMBER() OVER (
+            PARTITION BY c.user_id
+            ORDER BY c.category_money DESC
+        ) AS rn
+    FROM cat_revenue c
+)
+
+SELECT
+    t.user_id,
+    t.total_money AS total_revenue_2025,
+    b.product_category AS top_product_category_2025,
+    b.category_money AS revenue_from_top_category_2025,
+    CAST(b.category_money AS DECIMAL(16,5)) / NULLIF(t.total_money, 0) AS concentration_share
+FROM total_revenue t
+JOIN best_product_category b
+  ON t.user_id = b.user_id
+WHERE b.rn = 1
+ORDER BY t.user_id;
+
+
+
+
+
+
+
+
 
 -- SQL Correction:
  
-
+--Approved ✅
 
 -- Request 21
--- Question:
- 
 
 -- My SQL:
 
