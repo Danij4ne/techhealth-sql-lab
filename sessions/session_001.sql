@@ -951,22 +951,51 @@ ORDER BY t.user_id;
 
 
 
-
-
-
-
-
-
 -- SQL Correction:
  
 --Approved ✅
 
 -- Request 21
 
+-- Request 21/25 [CORPORATE]
+-- Business question:
+-- For the period 2025-04-01 to 2025-05-31,
+-- report total revenue per sales rep, and the number of distinct customers they served.
+-- Return one row per sales rep.
+
+-- Expected output:
+-- - sales rep identifier
+-- - total revenue
+-- - total distinct customers served
+
+
 -- My SQL:
 
 
+WITH dates AS (
+    SELECT *
+    FROM sales 
+    WHERE sale_date >= '2025-04-01' AND sale_date <= '2025-05-31'
+) ,
+revenue_sales AS (
+    SELECT sales_rep_id , SUM(total_amount) AS total_sales
+    FROM dates 
+    GROUP BY sales_rep_id
+) ,
+distinct_customers AS ( 
+    SELECT sales_rep_id , COUNT(DISTINCT user_id) AS customers_served
+    FROM dates 
+    GROUP BY sales_rep_id
+)
+SELECT d.sales_rep_id , r.total_sales , d.customers_served
+FROM distinct_customers d
+JOIN revenue_sales  r
+ON d.sales_rep_id = r.sales_rep_id
+
+
 -- SQL Correction:
+
+--Approved ✅
  
 
 
