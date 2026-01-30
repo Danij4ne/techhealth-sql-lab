@@ -1001,14 +1001,54 @@ ON d.sales_rep_id = r.sales_rep_id
 
 -- Request 22
 -- Question:
+
+
+-- Request 22/25 [INTERVIEW]
+-- Business question:
+-- For each customer, compute the time between their registration date
+-- and their first recorded purchase date (in days).
+-- If a customer has never purchased, exclude them.
+-- Return one row per customer.
+
+-- Expected output:
+-- - customer identifier
+-- - registration date
+-- - first purchase date
+-- - days from registration to first purchase
+ 
+
  
 
 -- My SQL:
 
 
+WITH the_sales AS (
+    SELECT user_id, MIN(sale_date) AS min_sales_date
+    FROM sales
+    GROUP BY user_id
+),
+dates AS (
+    SELECT
+        c.user_id,
+        c.registration_date,
+        s.min_sales_date,
+        DATEDIFF(DAY, c.registration_date, s.min_sales_date) AS the_time
+    FROM Customers c
+    JOIN the_sales s
+        ON c.user_id = s.user_id
+)
+SELECT
+    d.user_id,
+    d.registration_date,
+    d.min_sales_date,
+    d.the_time
+FROM dates d;
+
+
+
 -- SQL Correction:
  
-
+--Approved ✅
 
 -- Request 23
 -- Question:
