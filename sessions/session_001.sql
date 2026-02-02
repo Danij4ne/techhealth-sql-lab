@@ -1052,17 +1052,126 @@ FROM dates d;
 
 -- Request 23
 -- Question:
- 
+
+-- Request 23/25 [INTERVIEW]
+-- Business question:
+-- For each product category in 2025 (2025-01-01 to 2025-12-31),
+-- return the customer who bought the largest total quantity in that category.
+-- If there is a tie, choose the customer with the highest total revenue in that category.
+-- Return one row per product category.
+
+-- Expected output:
+-- - product category
+-- - customer identifier
+-- - total quantity in category (2025)
+-- - total revenue in category (2025)
+
 
 -- My SQL:
+
+ WITH sales_2025 AS (
+    SELECT
+        product_category,
+        user_id,
+        quantity,
+        total_amount
+    FROM Devices
+    WHERE sale_date >= '2025-01-01'
+      AND sale_date <  '2026-01-01'
+),
+customer_category_totals AS (
+    SELECT
+        product_category,
+        user_id,
+        SUM(quantity)     AS total_quantity_2025,
+        SUM(total_amount) AS total_revenue_2025
+    FROM sales_2025
+    GROUP BY product_category, user_id
+),
+ranked AS (
+    SELECT
+        product_category,
+        user_id,
+        total_quantity_2025,
+        total_revenue_2025,
+        ROW_NUMBER() OVER (
+            PARTITION BY product_category
+            ORDER BY total_quantity_2025 DESC, total_revenue_2025 DESC, user_id ASC
+        ) AS rn
+    FROM customer_category_totals
+)
+SELECT
+    product_category,
+    user_id,
+    total_quantity_2025,
+    total_revenue_2025
+FROM ranked
+WHERE rn = 1
+ORDER BY product_category ASC;
+
 
 
 -- SQL Correction:
  
+--Score: Wrong
+
+--The ranking logic is correct, but the query cannot work because you are reading
+--from Devices and using columns that do not exist there (sale_date, product_category, quantity, total_amount). 
+--That information is in dbo.Sales according to the DDL.
+
+-- Best professional solution (TSQL)
+
+WITH sales_2025 AS (
+    SELECT
+        s.product_category,
+        s.user_id,
+        s.quantity,
+        s.total_amount
+    FROM dbo.Sales s
+    WHERE s.sale_date >= '2025-01-01'
+      AND s.sale_date <  '2026-01-01'
+),
+customer_category_totals AS (
+    SELECT
+        s25.product_category,
+        s25.user_id,
+        SUM(s25.quantity) AS total_quantity_2025,
+        SUM(s25.total_amount) AS total_revenue_2025
+    FROM sales_2025 s25
+    GROUP BY
+        s25.product_category,
+        s25.user_id
+),
+ranked AS (
+    SELECT
+        cct.product_category,
+        cct.user_id,
+        cct.total_quantity_2025,
+        cct.total_revenue_2025,
+        ROW_NUMBER() OVER (
+            PARTITION BY cct.product_category
+            ORDER BY
+                cct.total_quantity_2025 DESC,
+                cct.total_revenue_2025 DESC,
+                cct.user_id ASC
+        ) AS rn
+    FROM customer_category_totals cct
+)
+SELECT
+    r.product_category,
+    r.user_id AS customer_identifier,
+    r.total_quantity_2025,
+    r.total_revenue_2025
+FROM ranked r
+WHERE r.rn = 1
+ORDER BY
+    r.product_category ASC;
 
 
 -- Request 24
 -- Question:
+
+
  
 
 -- My SQL:
