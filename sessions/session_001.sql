@@ -1171,15 +1171,120 @@ ORDER BY
 -- Request 24
 -- Question:
 
+-- Request 24/25 [CORPORATE]
+-- Business question:
+-- For the period 2025-04-01 to 2025-05-31,
+-- for each product category, report:
+--   1) total revenue,
+--   2) average discount applied (treat NULL discount as 0),
+--   3) the payment method that generated the highest revenue within that category.
+-- Return one row per product category.
+
+-- Expected output:
+-- - product category
+-- - total revenue
+-- - average discount applied
+-- - top payment method by revenue
 
  
 
 -- My SQL:
 
 
--- SQL Correction:
- 
 
+WITH date2025 AS (
+    SELECT *
+    FROM Sales
+    WHERE sale_date >= '2025-04-01' AND sale_date <= '2025-05-31'
+
+) ,
+t_revenue AS ( 
+    SELECT product_category , SUM(total_amount) AS total_revenue
+    FROM date2025
+    GROUP BY product_category
+) , 
+avg_discount AS (
+    SELECT product_category , AVG(COALESCE(discount_applied, 0 )) AS discount
+    FROM date2025 
+    GROUP BY product_category
+) ,
+payment AS (
+    SELECT d.product_category, d.payment_method, t.total_revenue,      
+    ROW_NUMBER() OVER ( PARTITION BY d.product_category ORDER BY t.total_revenue DESC ) AS pays
+    FROM date2025 d
+    JOIN t_revenue t
+    ON d.product_category = t.product_category
+)
+SELECT t.product_category , t.total_revenue , a.discount , p.pays
+FROM t_revenue t
+JOIN avg_discount a
+ON t.product_category = a.product_category
+JOIN payment p
+ON t.product_category = p.product_category
+WHERE p.pays = 1
+
+
+
+
+-- SQL Correction:
+
+-- Score : Wrong
+-- What’s right Correct date window filter ✔️ , Correct total revenue per category ✔️ ,Correct average discount per category with COALESCE(discount_applied, 0) ✔️
+-- What breaks the request You’re not finding the top payment method by revenue. In payment, you rank by t.total_revenue (category total) 
+-- which is the same value for every payment method within the category, so the ranking becomes arbitrary and wrong.
+ -- Final output should include top payment method, but you return p.pays (the rank number), not the payment_method.
+
+WITH period_sales AS (
+    SELECT
+        s.product_category,
+        s.total_amount,
+        COALESCE(s.discount_applied, 0) AS discount_applied,
+        s.payment_method
+    FROM dbo.Sales s
+    WHERE s.sale_date >= '2025-04-01'
+      AND s.sale_date <= '2025-05-31'
+),
+category_kpis AS (
+    SELECT
+        ps.product_category,
+        SUM(ps.total_amount) AS total_revenue,
+        AVG(CAST(ps.discount_applied AS DECIMAL(18,2))) AS average_discount_applied
+    FROM period_sales ps
+    GROUP BY
+        ps.product_category
+),
+category_payment_revenue AS (
+    SELECT
+        ps.product_category,
+        ps.payment_method,
+        SUM(ps.total_amount) AS payment_method_revenue
+    FROM period_sales ps
+    GROUP BY
+        ps.product_category,
+        ps.payment_method
+),
+ranked_payment AS (
+    SELECT
+        cpr.product_category,
+        cpr.payment_method,
+        cpr.payment_method_revenue,
+        ROW_NUMBER() OVER (
+            PARTITION BY cpr.product_category
+            ORDER BY cpr.payment_method_revenue DESC, cpr.payment_method ASC
+        ) AS rn
+    FROM category_payment_revenue cpr
+)
+SELECT
+    ck.product_category,
+    ck.total_revenue,
+    ck.average_discount_applied,
+    rp.payment_method AS top_payment_method_by_revenue
+FROM category_kpis ck
+JOIN ranked_payment rp
+    ON rp.product_category = ck.product_category
+WHERE rp.rn = 1
+ORDER BY
+    ck.product_category ASC;
 
 -- Request 25
 -- Question:
