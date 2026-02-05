@@ -1288,10 +1288,71 @@ ORDER BY
 
 -- Request 25
 -- Question:
- 
+
+-- Request 25/25 [INTERVIEW]
+-- Business question:
+-- Build a customer “engagement risk” snapshot as of 2025-05-08.
+-- A customer is "At Risk" if:
+--   - They have at least one Active device, AND
+--   - Their most recent device sync date is more than 30 days before 2025-05-08, AND
+--   - Their total revenue in the last 90 days ending on 2025-05-08 (2025-02-07 to 2025-05-08) is below the overall customer average revenue for that same 90-day period.
+-- Return one row per customer who is At Risk.
+
+-- Expected output:
+-- - customer identifier
+-- - most recent device sync date
+-- - revenue in last 90 days
+-- - overall average revenue in last 90 days
+-- - risk flag (At Risk)
+
 
 -- My SQL:
+
+WITH params AS (
+    SELECT
+        CAST('2025-05-08' AS DATE) AS snapshot_date,
+        CAST('2025-04-08' AS DATE) AS sync_cutoff_30d,
+        CAST('2025-02-07' AS DATE) AS revenue_start_90d
+),
+max_sync AS (
+    SELECT
+        d.user_id,
+        MAX(d.last_sync_date) AS max_sync_date
+    FROM Devices d
+    WHERE d.device_status = 'Active'
+    GROUP BY d.user_id
+),
+revenue_90d AS (
+    SELECT
+        s.user_id,
+        SUM(s.total_amount) AS revenue_90d
+    FROM dbo.Sales s
+    CROSS JOIN params p
+    WHERE s.sale_date >= p.revenue_start_90d
+      AND s.sale_date <= p.snapshot_date
+    GROUP BY s.user_id
+),
+overall_avg AS (
+    SELECT
+        AVG(CAST(r.revenue_90d AS DECIMAL(18,2))) AS overall_avg_revenue_90d
+    FROM revenue_90d r
+)
+
+SELECT
+    ms.user_id AS customer_id,
+    ms.max_sync_date AS most_recent_device_sync_date,
+    COALESCE(r.revenue_90d, 0) AS revenue_last_90d,
+    oa.overall_avg_revenue_90d AS overall_avg_revenue_last_90d,
+    'At Risk' AS risk_flag
+FROM max_sync ms
+CROSS JOIN params p
+CROSS JOIN overall_avg oa
+LEFT JOIN revenue_90d r
+    ON r.user_id = ms.user_id
+WHERE ms.max_sync_date < p.sync_cutoff_30d
+  AND COALESCE(r.revenue_90d, 0) < oa.overall_avg_revenue_90d;
 
 
 -- SQL Correction:
  
+--Approved ✅
