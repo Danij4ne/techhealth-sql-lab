@@ -676,93 +676,157 @@ END;
  
 -- FACT_SALES -  (50% 2024 / 50% 2025)
 
-TRUNCATE TABLE dw.fact_sales;
-
-;WITH SaleIds AS (
-    SELECT TOP (1000)
+ 
+;WITH
+-- 1) Generate 1..2000
+N AS (
+    SELECT TOP (2000)
         ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn
-    FROM sys.all_objects
+    FROM sys.all_objects a
+    CROSS JOIN sys.all_objects b
 ),
-Base AS (
-    SELECT
-        CONCAT('SALE-', RIGHT(CONCAT('000000', s.rn), 6)) AS sale_id,
 
-        d.date_sk,
+Customers AS (
+    SELECT
+        customer_sk,
+        ROW_NUMBER() OVER (ORDER BY customer_sk) AS n,
+        COUNT(*) OVER () AS cnt
+    FROM dw.dim_customer
+),
+Products AS (
+    SELECT
+        product_sk,
+        product_id,
+        product_category,
+        product_type,
+        ROW_NUMBER() OVER (ORDER BY product_sk) AS n,
+        COUNT(*) OVER () AS cnt
+    FROM dw.dim_product
+),
+Regions AS (
+    SELECT
+        region_sk,
+        ROW_NUMBER() OVER (ORDER BY region_sk) AS n,
+        COUNT(*) OVER () AS cnt
+    FROM dw.dim_region
+),
+Dates2024 AS (
+    SELECT
+        date_sk,
+        ROW_NUMBER() OVER (ORDER BY full_date) AS n,
+        COUNT(*) OVER () AS cnt
+    FROM dw.dim_date
+    WHERE calendar_year = 2024
+),
+Dates2025 AS (
+    SELECT
+        date_sk,
+        ROW_NUMBER() OVER (ORDER BY full_date) AS n,
+        COUNT(*) OVER () AS cnt
+    FROM dw.dim_date
+    WHERE calendar_year = 2025
+),
+
+Pick AS (
+    SELECT
+        n.rn,
+        CONCAT('SALE-', RIGHT(CONCAT('000000', n.rn), 6)) AS sale_id,
+
+        CASE
+            WHEN n.rn <= 1000 THEN d24.date_sk
+            ELSE d25.date_sk
+        END AS date_sk,
+
         c.customer_sk,
         r.region_sk,
-
         p.product_sk,
         p.product_id,
         p.product_category,
         p.product_type
-    FROM SaleIds s
-    CROSS APPLY (
-        SELECT TOP 1 date_sk
-        FROM dw.dim_date
-        WHERE calendar_year = CASE WHEN s.rn <= 250 THEN 2024 ELSE 2025 END
-        ORDER BY NEWID()
-    ) d
-    CROSS APPLY (SELECT TOP 1 customer_sk FROM dw.dim_customer ORDER BY NEWID()) c
-    CROSS APPLY (SELECT TOP 1 region_sk   FROM dw.dim_region   ORDER BY NEWID()) r
-    CROSS APPLY (
-        SELECT TOP 1 product_sk, product_id, product_category, product_type
-        FROM dw.dim_product
-        ORDER BY NEWID()
-    ) p
+    FROM N n
+
+    JOIN Customers c
+      ON c.n = ((n.rn - 1) % c.cnt) + 1
+
+    JOIN Regions r
+      ON r.n = ((n.rn - 1 + 7) % r.cnt) + 1
+
+    JOIN Products p
+      ON p.n = ((n.rn - 1 + 13) % p.cnt) + 1
+
+    LEFT JOIN Dates2024 d24
+      ON d24.n = ((n.rn - 1) % d24.cnt) + 1
+
+    LEFT JOIN Dates2025 d25
+      ON d25.n = ((n.rn - 1) % d25.cnt) + 1
 ),
+
 Calc AS (
     SELECT
-        b.*,
+        p.*,
 
-        CASE WHEN b.product_category = 'Accessory'
-             THEN 1 + (ABS(CHECKSUM(NEWID())) % 4)
-             ELSE 1
+        CASE
+            WHEN p.product_category = 'Accessory' THEN 1 + (p.rn % 4)
+            ELSE 1
         END AS quantity,
+
+        CAST(
+            CASE (p.rn % 6)
+                WHEN 0 THEN 0
+                WHEN 1 THEN 5
+                WHEN 2 THEN 10
+                WHEN 3 THEN 15
+                WHEN 4 THEN 20
+                ELSE 25
+            END
+        AS DECIMAL(5,2)) AS discount,
 
         CAST(ROUND(
             CASE
-                WHEN b.product_category = 'Device' AND b.product_type = 'Wearable' THEN 79  + (ABS(CHECKSUM(NEWID())) % 222)
-                WHEN b.product_category = 'Device' AND b.product_type = 'Medical'  THEN 59  + (ABS(CHECKSUM(NEWID())) % 291)
+                WHEN p.product_category = 'Device' AND p.product_type = 'Wearable'
+                    THEN 79.00 + (p.rn % 220)
+                WHEN p.product_category = 'Device' AND p.product_type = 'Medical'
+                    THEN 59.00 + (p.rn % 290)
 
-                WHEN b.product_category = 'Subscription' AND b.product_type = 'Plan' THEN
-                    CASE
-                        WHEN b.product_id LIKE 'SUB-FREE%'  THEN 0
-                        WHEN b.product_id LIKE 'SUB-BASIC%' THEN 9.99  + (ABS(CHECKSUM(NEWID())) % 6)
-                        WHEN b.product_id LIKE 'SUB-PREM%'  THEN 17.99 + (ABS(CHECKSUM(NEWID())) % 8)
-                        WHEN b.product_id LIKE 'SUB-PRO%'   THEN 24.99 + (ABS(CHECKSUM(NEWID())) % 16)
-                        WHEN b.product_id LIKE 'SUB-ENT%'   THEN 199   + (ABS(CHECKSUM(NEWID())) % 301)
-                        ELSE 9.99
-                    END
+                WHEN p.product_category = 'Subscription' AND p.product_type = 'Plan'
+                    THEN
+                        CASE
+                            WHEN p.product_id LIKE 'SUB-FREE%'  THEN 0.00
+                            WHEN p.product_id LIKE 'SUB-BASIC%' THEN 9.99  + (p.rn % 5)
+                            WHEN p.product_id LIKE 'SUB-PREM%'  THEN 17.99 + (p.rn % 7)
+                            WHEN p.product_id LIKE 'SUB-PRO%'   THEN 24.99 + (p.rn % 15)
+                            WHEN p.product_id LIKE 'SUB-ENT%'   THEN 199.00 + (p.rn % 300)
+                            ELSE 9.99
+                        END
 
-                WHEN b.product_category = 'Subscription' AND b.product_type = 'Add-on' THEN 2.99 + (ABS(CHECKSUM(NEWID())) % 8)
+                WHEN p.product_category = 'Subscription' AND p.product_type = 'Add-on'
+                    THEN 2.99 + (p.rn % 7)
 
-                WHEN b.product_category = 'Accessory' AND b.product_type IN ('Band','Strap') THEN 9.99 + (ABS(CHECKSUM(NEWID())) % 41)
-                WHEN b.product_category = 'Accessory' AND b.product_type IN ('Charger','Cable','Power') THEN 7.99 + (ABS(CHECKSUM(NEWID())) % 32)
-                WHEN b.product_category = 'Accessory' AND b.product_type = 'Protection' THEN 4.99 + (ABS(CHECKSUM(NEWID())) % 21)
+                WHEN p.product_category = 'Accessory' AND p.product_type IN ('Band','Strap')
+                    THEN 9.99 + (p.rn % 40)
+                WHEN p.product_category = 'Accessory' AND p.product_type IN ('Charger','Cable','Power')
+                    THEN 7.99 + (p.rn % 30)
+                WHEN p.product_category = 'Accessory' AND p.product_type = 'Protection'
+                    THEN 4.99 + (p.rn % 20)
 
-                WHEN b.product_category = 'Service' AND b.product_type = 'Warranty' THEN 19.99 + (ABS(CHECKSUM(NEWID())) % 81)
-                WHEN b.product_category = 'Service' AND b.product_type = 'Support'  THEN 9.99  + (ABS(CHECKSUM(NEWID())) % 31)
-                WHEN b.product_category = 'Service' AND b.product_type = 'Onboarding' THEN 14.99 + (ABS(CHECKSUM(NEWID())) % 46)
+                WHEN p.product_category = 'Service' AND p.product_type = 'Warranty'
+                    THEN 19.99 + (p.rn % 80)
+                WHEN p.product_category = 'Service' AND p.product_type = 'Support'
+                    THEN 9.99 + (p.rn % 30)
+                WHEN p.product_category = 'Service' AND p.product_type = 'Onboarding'
+                    THEN 14.99 + (p.rn % 45)
 
-                WHEN b.product_category = 'Digital' AND b.product_type = 'Report'   THEN 3.99 + (ABS(CHECKSUM(NEWID())) % 16)
-                WHEN b.product_category = 'Digital' AND b.product_type = 'Insights' THEN 7.99 + (ABS(CHECKSUM(NEWID())) % 22)
+                WHEN p.product_category = 'Digital' AND p.product_type = 'Report'
+                    THEN 3.99 + (p.rn % 15)
+                WHEN p.product_category = 'Digital' AND p.product_type = 'Insights'
+                    THEN 7.99 + (p.rn % 20)
 
                 ELSE 9.99
             END
-        , 2) AS DECIMAL(10,2)) AS unit_price,
-
-        CAST(
-            CASE (ABS(CHECKSUM(NEWID())) % 10)
-                WHEN 0 THEN 5
-                WHEN 1 THEN 10
-                WHEN 2 THEN 15
-                WHEN 3 THEN 20
-                WHEN 4 THEN 25
-                ELSE 0
-            END
-        AS DECIMAL(5,2)) AS discount
-    FROM Base b
+        , 2) AS DECIMAL(10,2)) AS unit_price
+    FROM Pick p
 )
+
 INSERT INTO dw.fact_sales
 (sale_id, date_sk, customer_sk, product_sk, region_sk, quantity, unit_price, discount, net_amount)
 SELECT
@@ -774,7 +838,7 @@ SELECT
     quantity,
     unit_price,
     discount,
-    CAST(ROUND(quantity * unit_price * (1 - discount/100.0), 2) AS DECIMAL(12,2)) AS net_amount
+    CAST(ROUND(quantity * unit_price * (1 - discount/100.0), 2) AS DECIMAL(12,2))
 FROM Calc;
 
 
