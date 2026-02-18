@@ -614,131 +614,165 @@ VALUES
 ON CONFLICT (device_id) DO NOTHING;
 
  
+  
+-- FACT_SALES (2000 rows) - deterministic / FK-safe / 50% 2024-50% 2025
  
- 
--- FACT_SALES   - CONSISTENT randoms per row (qty/price/discount/net_amount)
-TRUNCATE TABLE dw.fact_sales RESTART IDENTITY;
-
-WITH picks AS (
-    SELECT
-        gs AS n,
-
-        d.date_sk,
-        c.customer_sk,
-        r.region_sk,
-        p.product_sk,
-        p.product_id,
-        p.product_category,
-        p.product_type,
-
-        random() AS rnd_qty,
-        random() AS rnd_price,
-        random() AS rnd_disc
-    FROM generate_series(1, 1000) gs
-    -- 👇 30% 2024 (1..300), 70% 2025 (301..1000)
-    CROSS JOIN LATERAL (
-        SELECT date_sk
-        FROM dw.dim_date
-        WHERE calendar_year = CASE WHEN gs <= 300 THEN 2024 ELSE 2025 END
-        ORDER BY random()
-        LIMIT 1
-    ) d
-    CROSS JOIN LATERAL (SELECT customer_sk FROM dw.dim_customer ORDER BY random() LIMIT 1) c
-    CROSS JOIN LATERAL (SELECT region_sk   FROM dw.dim_region   ORDER BY random() LIMIT 1) r
-    CROSS JOIN LATERAL (
-        SELECT product_sk, product_id, product_category, product_type
-        FROM dw.dim_product
-        ORDER BY random()
-        LIMIT 1
-    ) p
+WITH
+-- 1) 1..2000
+n AS (
+  SELECT generate_series(1, 2000) AS rn
 ),
+
+-- 2) Dimensiones numeradas para “ciclar” con módulo
+customers AS (
+  SELECT customer_sk,
+         row_number() OVER (ORDER BY customer_sk) AS n,
+         count(*) OVER () AS cnt
+  FROM dw.dim_customer
+),
+products AS (
+  SELECT product_sk, product_id, product_category, product_type,
+         row_number() OVER (ORDER BY product_sk) AS n,
+         count(*) OVER () AS cnt
+  FROM dw.dim_product
+),
+regions AS (
+  SELECT region_sk,
+         row_number() OVER (ORDER BY region_sk) AS n,
+         count(*) OVER () AS cnt
+  FROM dw.dim_region
+),
+dates_2024 AS (
+  SELECT date_sk,
+         row_number() OVER (ORDER BY full_date) AS n,
+         count(*) OVER () AS cnt
+  FROM dw.dim_date
+  WHERE calendar_year = 2024
+),
+dates_2025 AS (
+  SELECT date_sk,
+         row_number() OVER (ORDER BY full_date) AS n,
+         count(*) OVER () AS cnt
+  FROM dw.dim_date
+  WHERE calendar_year = 2025
+),
+
+-- 3) Picks deterministas (sin random)
+pick AS (
+  SELECT
+    n.rn,
+    'SALE-' || lpad(n.rn::text, 6, '0') AS sale_id,
+
+    -- 1000 filas 2024 + 1000 filas 2025
+    CASE
+      WHEN n.rn <= 1000 THEN d24.date_sk
+      ELSE d25.date_sk
+    END AS date_sk,
+
+    c.customer_sk,
+    r.region_sk,
+
+    p.product_sk,
+    p.product_id,
+    p.product_category,
+    p.product_type
+  FROM n
+
+  JOIN customers c
+    ON c.n = ((n.rn - 1) % c.cnt) + 1
+
+  JOIN regions r
+    ON r.n = ((n.rn - 1 + 7) % r.cnt) + 1
+
+  JOIN products p
+    ON p.n = ((n.rn - 1 + 13) % p.cnt) + 1
+
+  LEFT JOIN dates_2024 d24
+    ON d24.n = ((n.rn - 1) % d24.cnt) + 1
+
+  LEFT JOIN dates_2025 d25
+    ON d25.n = ((n.rn - 1) % d25.cnt) + 1
+),
+
+-- 4) Cálculos deterministas (qty/price/discount)
 calc AS (
-    SELECT
-        'SALE-' || lpad(n::text, 6, '0') AS sale_id,
-        date_sk,
-        customer_sk,
-        product_sk,
-        region_sk,
-        product_id,
-        product_category,
-        product_type,
+  SELECT
+    p.*,
 
-        CASE
-            WHEN product_category = 'Accessory'
-                THEN 1 + floor(rnd_qty * 4)::int
-            ELSE 1
-        END AS quantity,
+    CASE
+      WHEN p.product_category = 'Accessory' THEN 1 + (p.rn % 4)   -- 1..4
+      ELSE 1
+    END AS quantity,
 
-        round((
-            CASE
-                WHEN product_category = 'Device' AND product_type = 'Wearable'
-                    THEN 79  + floor(rnd_price * 222)
-                WHEN product_category = 'Device' AND product_type = 'Medical'
-                    THEN 59  + floor(rnd_price * 291)
+    -- descuento: 0,5,10,15,20,25
+    (CASE (p.rn % 6)
+      WHEN 0 THEN 0
+      WHEN 1 THEN 5
+      WHEN 2 THEN 10
+      WHEN 3 THEN 15
+      WHEN 4 THEN 20
+      ELSE 25
+    END)::numeric(5,2) AS discount,
 
-                WHEN product_category = 'Subscription' AND product_type = 'Plan' THEN
-                    CASE
-                        WHEN product_id LIKE 'SUB-FREE%'  THEN 0
-                        WHEN product_id LIKE 'SUB-BASIC%' THEN 9.99  + floor(rnd_price * 6)
-                        WHEN product_id LIKE 'SUB-PREM%'  THEN 17.99 + floor(rnd_price * 8)
-                        WHEN product_id LIKE 'SUB-PRO%'   THEN 24.99 + floor(rnd_price * 16)
-                        WHEN product_id LIKE 'SUB-ENT%'   THEN 199   + floor(rnd_price * 301)
-                        ELSE 9.99
-                    END
+    round((
+      CASE
+        WHEN p.product_category = 'Device' AND p.product_type = 'Wearable'
+          THEN 79.00 + (p.rn % 220)
+        WHEN p.product_category = 'Device' AND p.product_type = 'Medical'
+          THEN 59.00 + (p.rn % 290)
 
-                WHEN product_category = 'Subscription' AND product_type = 'Add-on'
-                    THEN 2.99 + floor(rnd_price * 8)
+        WHEN p.product_category = 'Subscription' AND p.product_type = 'Plan' THEN
+          CASE
+            WHEN p.product_id LIKE 'SUB-FREE%'  THEN 0.00
+            WHEN p.product_id LIKE 'SUB-BASIC%' THEN 9.99  + (p.rn % 5)
+            WHEN p.product_id LIKE 'SUB-PREM%'  THEN 17.99 + (p.rn % 7)
+            WHEN p.product_id LIKE 'SUB-PRO%'   THEN 24.99 + (p.rn % 15)
+            WHEN p.product_id LIKE 'SUB-ENT%'   THEN 199.00 + (p.rn % 300)
+            ELSE 9.99
+          END
 
-                WHEN product_category = 'Accessory' AND product_type IN ('Band','Strap')
-                    THEN 9.99 + floor(rnd_price * 41)
-                WHEN product_category = 'Accessory' AND product_type IN ('Charger','Cable','Power')
-                    THEN 7.99 + floor(rnd_price * 32)
-                WHEN product_category = 'Accessory' AND product_type = 'Protection'
-                    THEN 4.99 + floor(rnd_price * 21)
+        WHEN p.product_category = 'Subscription' AND p.product_type = 'Add-on'
+          THEN 2.99 + (p.rn % 7)
 
-                WHEN product_category = 'Service' AND product_type = 'Warranty'
-                    THEN 19.99 + floor(rnd_price * 81)
-                WHEN product_category = 'Service' AND product_type = 'Support'
-                    THEN 9.99  + floor(rnd_price * 31)
-                WHEN product_category = 'Service' AND product_type = 'Onboarding'
-                    THEN 14.99 + floor(rnd_price * 46)
+        WHEN p.product_category = 'Accessory' AND p.product_type IN ('Band','Strap')
+          THEN 9.99 + (p.rn % 40)
+        WHEN p.product_category = 'Accessory' AND p.product_type IN ('Charger','Cable','Power')
+          THEN 7.99 + (p.rn % 30)
+        WHEN p.product_category = 'Accessory' AND p.product_type = 'Protection'
+          THEN 4.99 + (p.rn % 20)
 
-                WHEN product_category = 'Digital' AND product_type = 'Report'
-                    THEN 3.99 + floor(rnd_price * 16)
-                WHEN product_category = 'Digital' AND product_type = 'Insights'
-                    THEN 7.99 + floor(rnd_price * 22)
+        WHEN p.product_category = 'Service' AND p.product_type = 'Warranty'
+          THEN 19.99 + (p.rn % 80)
+        WHEN p.product_category = 'Service' AND p.product_type = 'Support'
+          THEN 9.99 + (p.rn % 30)
+        WHEN p.product_category = 'Service' AND p.product_type = 'Onboarding'
+          THEN 14.99 + (p.rn % 45)
 
-                ELSE 9.99
-            END
-        )::numeric, 2) AS unit_price,
+        WHEN p.product_category = 'Digital' AND p.product_type = 'Report'
+          THEN 3.99 + (p.rn % 15)
+        WHEN p.product_category = 'Digital' AND p.product_type = 'Insights'
+          THEN 7.99 + (p.rn % 20)
 
-        (
-            CASE floor(rnd_disc * 10)::int
-                WHEN 0 THEN 5
-                WHEN 1 THEN 10
-                WHEN 2 THEN 15
-                WHEN 3 THEN 20
-                WHEN 4 THEN 25
-                ELSE 0
-            END
-        )::numeric(5,2) AS discount
-    FROM picks
+        ELSE 9.99
+      END
+    )::numeric, 2) AS unit_price
+  FROM pick p
 )
+
+-- 5) Insert final
 INSERT INTO dw.fact_sales
 (sale_id, date_sk, customer_sk, product_sk, region_sk, quantity, unit_price, discount, net_amount)
 SELECT
-    sale_id,
-    date_sk,
-    customer_sk,
-    product_sk,
-    region_sk,
-    quantity,
-    unit_price,
-    discount,
-    round((quantity::numeric * unit_price) * (1 - discount/100.0), 2)::numeric(12,2) AS net_amount
+  sale_id,
+  date_sk,
+  customer_sk,
+  product_sk,
+  region_sk,
+  quantity,
+  unit_price,
+  discount,
+  round((quantity::numeric * unit_price) * (1 - discount/100.0), 2)::numeric(12,2) AS net_amount
 FROM calc;
-
-
  
 --  FACT_DEVICE_USAGE_DAILY (5000 rows)
 --    WE USE ON CONFLICT DO NOTHING TO RESPECT UNIQUE(date_sk, customer_sk, device_sk)
