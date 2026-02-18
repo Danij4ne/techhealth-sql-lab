@@ -56,12 +56,59 @@ ORDER BY reporting_month;
 
 -- Request 2
 -- Question:
- 
+
+-- Request 2/25 [INTERVIEW]
+-- Business question:
+-- Identify the top 3 customers by total revenue
+-- during the last 90 days.
+-- If two customers tie, use customer identifier as deterministic tie-breaker.
+-- Result must be ranked.
+
+-- Expected output:
+-- - rank_position
+-- - customer_identifier
+-- - total_revenue_last_90_days
+
 
 -- My SQL:
+WITH max_dwh_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+revenue_90d AS (
+    SELECT
+        f.customer_sk AS customer_identifier,
+        SUM(f.net_amount) AS total_revenue_last_90_days
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN max_dwh_date m
+    WHERE d.full_date >= DATEADD(DAY, -90, m.max_date)
+      AND d.full_date <= m.max_date
+    GROUP BY f.customer_sk
+),
+ranked AS (
+    SELECT
+        ROW_NUMBER() OVER (
+            ORDER BY total_revenue_last_90_days DESC, customer_identifier ASC
+        ) AS rank_position,
+        customer_identifier,
+        total_revenue_last_90_days
+    FROM revenue_90d
+)
+SELECT
+    rank_position,
+    customer_identifier,
+    total_revenue_last_90_days
+FROM ranked
+WHERE rank_position <= 3
+ORDER BY rank_position;
 
+ 
 
 -- SQL Correction:
+
+-- Correct 
  
 
 
