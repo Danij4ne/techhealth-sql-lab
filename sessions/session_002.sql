@@ -114,12 +114,49 @@ ORDER BY rank_position;
 
 -- Request 3
 -- Question:
+
+-- Request 3/25 [CORPORATE]
+-- Business question:
+-- Operations wants to understand device reliability.
+-- For the last 30 days, show the number of distinct devices that reported activity,
+-- and the number of distinct devices that reported at least one error.
+-- Report at daily granularity.
+
+-- Expected output:
+-- - activity_date
+-- - active_devices
+-- - devices_with_errors
+
  
 
 -- My SQL:
+-- this is now with Postgres
+WITH the_max_date AS (
+  SELECT MAX(full_date)::date AS max_date
+  FROM dw.dim_date
+),
+bounds AS (
+  SELECT (max_date - INTERVAL '30 days')::date AS min_date, max_date
+  FROM the_max_date
+)
+SELECT
+  d.full_date::date AS activity_date,
+  COUNT(DISTINCT CASE WHEN f.is_device_active = TRUE  THEN de.device_id END) AS active_devices,
+  COUNT(DISTINCT CASE WHEN f.is_device_active = FALSE THEN de.device_id END) AS devices_with_errors
+FROM dw.fact_device_usage_daily f
+JOIN dw.dim_date d
+  ON f.date_sk = d.date_sk
+JOIN dw.dim_device de
+  ON f.device_sk = de.device_sk
+CROSS JOIN bounds b
+WHERE d.full_date::date BETWEEN b.min_date AND b.max_date
+GROUP BY 1
+ORDER BY 1;
 
 
 -- SQL Correction:
+
+-- Correct
  
 
 
