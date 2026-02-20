@@ -162,11 +162,102 @@ ORDER BY 1;
 
 -- Request 4
 -- Question:
+
+-- Request 4/25 [INTERVIEW]
+-- Business question:
+-- Finance suspects discounting is hurting performance.
+-- Using the last full calendar quarter (anchored to the latest available warehouse date),
+-- return the 5 products with the highest total discount amount.
+-- Use a deterministic tie-breaker by product identifier.
+-- Granularity: per product.
+
+-- Expected output:
+-- - product_identifier
+-- - product_name
+-- - total_discount_amount
+-- - total_revenue
+
  
 -- My SQL:
 
+WITH date_products AS( 
+    SELECT p.product_id, p.product_name , SUM(s.unit_price * s.quantity * s.discount / 100 ) AS total_discount_amount , SUM(s.net_amount) AS total_revenue
+    FROM dw.dim_product p 
+    JOIN dw.fact_sales s 
+    ON p.product_sk = s.product_sk 
+    JOIN dw.dim_date d 
+    ON s.date_sk = d.date_sk 
+    WHERE d.calendar_year = 2025 AND d.calendar_quarter = 4 
+    GROUP BY 1,2 
+    ) 
+    SELECT product_id, product_name , total_discount_amount , total_revenue 
+    FROM date_products 
+    ORDER BY total_discount_amount DESC , product_id LIMIT 5
+
+
 
 -- SQL Correction:
+
+-- Score: Partial
+
+--What’s correct:
+
+--Correct aggregation at product level.
+
+--Correct discount calculation logic.
+
+--Deterministic tie-breaker (ORDER BY total_discount_amount DESC, product_id).
+
+--Correct LIMIT 5 for Postgres.
+
+--Proper grouping.
+
+--What’s missing:
+
+--You hardcoded 2025 Q4.
+
+--The request required last full calendar quarter anchored to max warehouse date.
+
+--If we move into 2026, your query breaks conceptually.
+
+--Not robust for production analytics.
+
+WITH max_dwh_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM public.dim_date
+),
+last_full_quarter AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) - INTERVAL '3 months' AS quarter_start,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '1 day' AS quarter_end
+    FROM max_dwh_date
+),
+product_agg AS (
+    SELECT
+        p.product_id AS product_identifier,
+        p.product_name,
+        SUM(s.unit_price * s.quantity * s.discount / 100.0) AS total_discount_amount,
+        SUM(s.net_amount) AS total_revenue
+    FROM public.fact_sales s
+    JOIN public.dim_product p
+        ON s.product_sk = p.product_sk
+    JOIN public.dim_date d
+        ON s.date_sk = d.date_sk
+    CROSS JOIN last_full_quarter q
+    WHERE d.full_date BETWEEN q.quarter_start AND q.quarter_end
+    GROUP BY p.product_id, p.product_name
+)
+SELECT
+    product_identifier,
+    product_name,
+    total_discount_amount,
+    total_revenue
+FROM product_agg
+ORDER BY total_discount_amount DESC, product_identifier
+LIMIT 5;
+
+
+
  
 
 
