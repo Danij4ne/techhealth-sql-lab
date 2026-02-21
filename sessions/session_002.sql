@@ -224,7 +224,7 @@ WITH date_products AS(
 
 WITH max_dwh_date AS (
     SELECT MAX(full_date) AS max_date
-    FROM public.dim_date
+    FROM dw.dim_date
 ),
 last_full_quarter AS (
     SELECT
@@ -258,17 +258,55 @@ LIMIT 5;
 
 
 
- 
-
 
 -- Request 5
 -- Question:
- 
+
+-- Request 5/25 [CORPORATE]
+-- Business question:
+-- Marketing wants to understand subscription performance.
+-- For the last 12 months, show total revenue per subscription type.
+-- Granularity: per subscription type.
+-- Time window: rolling 12 months based on max warehouse date.
+
+-- Expected output:
+-- - subscription_type
+-- - total_revenue_last_12_months
+-- - total_transactions
+
+
 
 -- My SQL:
- 
+
+WITH maxim_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+interval_date AS (
+    SELECT
+        (DATE_TRUNC('day', max_date) - INTERVAL '1 year')::date AS min_date,
+        DATE_TRUNC('day', max_date)::date AS max_date
+    FROM maxim_date
+)
+SELECT
+    c.subscription_type,
+    SUM(f.net_amount) AS total_revenue_last_12_months,
+    COUNT(f.sales_fact_id) AS total_transactions
+FROM dw.dim_customer c
+JOIN dw.fact_sales f
+    ON c.customer_sk = f.customer_sk
+JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+CROSS JOIN interval_date i
+WHERE d.full_date BETWEEN i.min_date AND i.max_date
+GROUP BY 1
+ORDER BY total_revenue_last_12_months DESC;
+
+
 
 -- SQL Correction:
+
+-- Score: Correct
 
 
 -- Request 6
