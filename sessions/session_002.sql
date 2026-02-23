@@ -311,12 +311,53 @@ ORDER BY total_revenue_last_12_months DESC;
 
 -- Request 6
 -- Question:
+
+-- Request 6/25 [INTERVIEW]
+-- Business question:
+-- Product wants to find customers who are “highly active”.
+-- For the last 60 days (anchored to max warehouse date),
+-- return the top 10 customers by number of active days (days with at least 1 sale).
+-- Use deterministic tie-breakers by customer identifier.
+-- Granularity: per customer.
+
+-- Expected output:
+-- - customer_identifier
+-- - active_days_last_60
+-- - total_revenue_last_60
  
 
 -- My SQL:
- 
+
+
+WITH max_dw_date AS (
+    SELECT MAX(full_date) AS max_date 
+    FROM dw.dim_date
+),
+dw_date AS(
+    SELECT  max_date , max_date - INTERVAL '60 days' AS min_date
+    FROM  max_dw_date    
+     
+) ,
+dw_products AS (
+SELECT c.customer_id AS customer_identifier , COUNT(DISTINCT f.date_sk) AS active_days_last_60 , SUM(f.net_amount) AS total_revenue_last_60
+FROM dw.dim_customer c 
+JOIN dw.fact_sales f  
+ON c.customer_sk = f.customer_sk 
+JOIN dw.dim_date d
+ON f.date_sk = d.date_sk
+CROSS JOIN dw_date a
+WHERE d.full_date BETWEEN a.min_date AND a.max_date
+GROUP BY c.customer_id
+) 
+SELECT ROW_NUMBER() OVER(ORDER BY active_days_last_60 DESC , customer_identifier ASC ) AS RANKING , customer_identifier , active_days_last_60 , total_revenue_last_60
+FROM dw_products
+ORDER BY active_days_last_60 DESC , customer_identifier ASC
+LIMIT 10 
+
 
 -- SQL Correction:
+
+-- Score: Correct
 
 
 
