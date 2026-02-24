@@ -363,12 +363,116 @@ LIMIT 10
 
 -- Request 7
 -- Question:
+
+-- Request 7/25 [CORPORATE]
+-- Business question:
+-- Sales leadership wants to track day-to-day momentum.
+-- For the last 14 days (anchored to max warehouse date),
+-- show daily revenue and the 7-day moving average of daily revenue.
+-- Granularity: per day.
+
+-- Expected output:
+-- - activity_date
+-- - daily_revenue
+-- - revenue_7d_moving_avg
  
 
 -- My SQL:
+
+WITH the_date AS (
+    SELECT MAX(d.full_date) AS max_date
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d ON f.date_sk = d.date_sk
+),
+dw_date AS (
+    SELECT max_date, max_date - INTERVAL '13 days' AS min_date
+    FROM the_date
+),
+the_table AS (
+    SELECT
+        d.full_date AS activity_date,
+        SUM(f.net_amount) AS daily_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d ON f.date_sk = d.date_sk
+    CROSS JOIN dw_date a
+    WHERE d.full_date BETWEEN a.min_date AND a.max_date
+    GROUP BY d.full_date
+)
+SELECT
+    activity_date,
+    daily_revenue,
+    AVG(daily_revenue) OVER (
+        ORDER BY activity_date
+        ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS revenue_7d_moving_avg
+FROM the_table
+ORDER BY activity_date;
+
+
  
 
 -- SQL Correction:
+
+-- Score: Partial
+
+--  WHAT’S CORRECT
+-- 1) Last 14-day window is correctly built (min_date = max_date - 13).
+-- 2) Daily revenue is properly aggregated.
+-- 3) 7-day moving average is correctly calculated with:
+-- ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+-- 4) Correct ordering by date.
+
+--  WHAT’S MISSING / RISK
+-- 1) The request required anchoring to the max warehouse date (dim_date),
+-- but your query anchors to the latest day with sales (fact_sales).
+-- If there are trailing days with no sales, your “last 14 days” window shifts.
+
+-- 2) If there are days with no sales inside the range, they won’t appear as rows,
+-- so the moving average is computed over “sales days” instead of “calendar days”.
+-- In corporate reporting, all calendar days are usually expected.
+
+
+-- Best Professional PostgreSQL Solution (calendar-complete, anchored to DW max date)
+
+WITH max_dwh_date AS (
+    SELECT MAX(full_date)::date AS max_date
+    FROM dw.dim_date
+),
+bounds AS (
+    SELECT
+        (max_date - INTERVAL '13 days')::date AS min_date,
+        max_date::date AS max_date
+    FROM max_dwh_date
+),
+calendar AS (
+    SELECT d.full_date::date AS activity_date
+    FROM dw.dim_date d
+    CROSS JOIN bounds b
+    WHERE d.full_date::date BETWEEN b.min_date AND b.max_date
+),
+daily_sales AS (
+    SELECT
+        d.full_date::date AS activity_date,
+        SUM(f.net_amount) AS daily_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN bounds b
+    WHERE d.full_date::date BETWEEN b.min_date AND b.max_date
+    GROUP BY d.full_date::date
+)
+SELECT
+    c.activity_date,
+    COALESCE(s.daily_revenue, 0) AS daily_revenue,
+    AVG(COALESCE(s.daily_revenue, 0)) OVER (
+        ORDER BY c.activity_date
+        ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS revenue_7d_moving_avg
+FROM calendar c
+LEFT JOIN daily_sales s
+    ON s.activity_date = c.activity_date
+ORDER BY c.activity_date;
+
 
 
 
