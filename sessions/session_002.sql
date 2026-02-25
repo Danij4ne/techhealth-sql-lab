@@ -479,14 +479,95 @@ ORDER BY c.activity_date;
 
 -- Request 8
 -- Question:
+
+-- Request 8/25 [INTERVIEW]
+-- Business question:
+-- Customer Success wants to detect churn risk.
+-- Find customers who had revenue in the prior 60-day window,
+-- but had ZERO revenue in the most recent 30 days (anchored to max warehouse date).
+-- Granularity: per customer.
+
+-- Expected output:
+-- - customer_identifier
+-- - revenue_prior_60_days
+-- - last_purchase_date
  
 
 -- My SQL:
+
+WITH dw_max_date AS (
+  SELECT MAX(full_date) AS max_date
+  FROM dw.dim_date
+),
+dates AS (
+  SELECT
+    max_date,
+    -- recent 30 days: (max_date - 30, max_date]
+    max_date - INTERVAL '30 days' AS recent_start,
+    max_date                     AS recent_end,
+
+    -- prior 60 days: (max_date - 90, max_date - 30]
+    max_date - INTERVAL '90 days' AS prior_start,
+    max_date - INTERVAL '30 days' AS prior_end
+  FROM dw_max_date
+),
+per_customer AS (
+  SELECT
+    c.customer_id AS customer_identifier,
+
+    -- revenue in prior 60-day window
+    SUM(
+      CASE
+        WHEN d.full_date >  a.prior_start
+         AND d.full_date <= a.prior_end
+        THEN f.net_amount
+        ELSE 0
+      END
+    ) AS revenue_prior_60_days,
+
+    -- revenue in recent 30-day window (needed to filter)
+    SUM(
+      CASE
+        WHEN d.full_date >  a.recent_start
+         AND d.full_date <= a.recent_end
+        THEN f.net_amount
+        ELSE 0
+      END
+    ) AS revenue_recent_30_days,
+
+    -- last purchase date (typically: last purchase in the prior window)
+    MAX(
+      CASE
+        WHEN d.full_date >  a.prior_start
+         AND d.full_date <= a.prior_end
+         AND f.net_amount > 0
+        THEN d.full_date
+        ELSE NULL
+      END
+    ) AS last_purchase_date
+
+  FROM dw.fact_sales f
+  JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+  JOIN dw.dim_customer c
+    ON f.customer_sk = c.customer_sk
+  CROSS JOIN dates a
+  GROUP BY c.customer_id
+)
+SELECT
+  customer_identifier,
+  revenue_prior_60_days,
+  last_purchase_date
+FROM per_customer
+WHERE revenue_prior_60_days > 0
+  AND revenue_recent_30_days = 0
+ORDER BY revenue_prior_60_days DESC;
+
  
 
 -- SQL Correction:
 
-
+--Score: Correct
 
 -- Request 9
 -- Question:
