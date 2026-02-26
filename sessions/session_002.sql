@@ -571,12 +571,102 @@ ORDER BY revenue_prior_60_days DESC;
 
 -- Request 9
 -- Question:
+
+-- Request 9/25 [CORPORATE]
+-- Business question:
+-- Support wants to spot customers who might be struggling with engagement.
+-- For the last full calendar month (anchored to max warehouse date),
+-- show, per subscription type:
+-- - number of distinct customers
+-- - average days since their last sale (as of the max warehouse date)
+-- Granularity: per subscription type.
+
+-- Expected output:
+-- - subscription_type
+-- - customer_count
+-- - avg_days_since_last_sale
+
+ 
  
 
 -- My SQL:
 
+WITH max_dw AS (
+  SELECT MAX(full_date) AS max_dw_date
+  FROM dw.dim_date
+),
+last_sale_per_customer AS (
+  SELECT
+    c.subscription_type,
+    c.customer_id,
+    MAX(d.full_date) AS last_sale_date
+  FROM dw.dim_customer c
+  JOIN dw.fact_sales f
+    ON c.customer_sk = f.customer_sk
+  JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+  GROUP BY 1, 2
+)
+SELECT
+  l.subscription_type,
+  COUNT(DISTINCT l.customer_id) AS customer_count,
+  AVG((m.max_dw_date - l.last_sale_date))::numeric(10,2) AS avg_days_since_last_sale
+FROM last_sale_per_customer l
+CROSS JOIN max_dw m
+GROUP BY 1
+ORDER BY 1;
+
+
+
 
 -- SQL Correction:
+
+-- Score: Partial
+
+WITH max_dwh AS (
+  SELECT MAX(full_date)::date AS max_date
+  FROM dw.dim_date
+),
+last_full_month AS (
+  SELECT
+    (DATE_TRUNC('month', max_date) - INTERVAL '1 month')::date AS month_start,
+    (DATE_TRUNC('month', max_date) - INTERVAL '1 day')::date   AS month_end,
+    max_date
+  FROM max_dwh
+),
+customers_in_month AS (
+  SELECT DISTINCT
+    c.subscription_type,
+    c.customer_id
+  FROM dw.fact_sales f
+  JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+  JOIN dw.dim_customer c
+    ON f.customer_sk = c.customer_sk
+  CROSS JOIN last_full_month m
+  WHERE d.full_date::date BETWEEN m.month_start AND m.month_end
+),
+last_sale_per_customer AS (
+  SELECT
+    c.customer_id,
+    MAX(d.full_date)::date AS last_sale_date
+  FROM dw.fact_sales f
+  JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+  JOIN dw.dim_customer c
+    ON f.customer_sk = c.customer_sk
+  GROUP BY c.customer_id
+)
+SELECT
+  cm.subscription_type,
+  COUNT(*) AS customer_count,
+  AVG((m.max_date - ls.last_sale_date))::numeric(10,2) AS avg_days_since_last_sale
+FROM customers_in_month cm
+JOIN last_sale_per_customer ls
+  ON ls.customer_id = cm.customer_id
+CROSS JOIN last_full_month m
+GROUP BY cm.subscription_type
+ORDER BY cm.subscription_type;
  
 
 
