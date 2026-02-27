@@ -672,12 +672,76 @@ ORDER BY cm.subscription_type;
 
 -- Request 10
 -- Question:
+
+-- Request 10/25 [INTERVIEW]
+-- Business question:
+-- Revenue Ops wants to measure concentration risk.
+-- For the last 6 months (anchored to max warehouse date),
+-- calculate what percentage of total revenue comes from the top 10 customers.
+-- Return a single row.
+
+-- Expected output:
+-- - total_revenue_last_6_months
+-- - top10_revenue_last_6_months
+-- - top10_revenue_share_pct
+
+
  
 
 -- My SQL:
 
+WITH max_date AS (
+  SELECT MAX(full_date)::date AS max_dw_date
+  FROM dw.dim_date
+),
+dates AS (
+  SELECT
+    max_dw_date,
+    (max_dw_date - INTERVAL '6 months')::date AS start_date
+  FROM max_date
+),
+revenue_by_customer AS (
+  SELECT
+    f.customer_sk,
+    SUM(f.net_amount) AS customer_revenue_last_6_months
+  FROM dw.fact_sales f
+  JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+  CROSS JOIN dates da
+  WHERE d.full_date BETWEEN da.start_date AND da.max_dw_date
+  GROUP BY f.customer_sk
+),
+total_revenue AS (
+  SELECT
+    SUM(customer_revenue_last_6_months) AS total_revenue_last_6_months
+  FROM revenue_by_customer
+),
+top10 AS (
+  SELECT
+    SUM(customer_revenue_last_6_months) AS top10_revenue_last_6_months
+  FROM (
+    SELECT customer_revenue_last_6_months
+    FROM revenue_by_customer
+    ORDER BY customer_revenue_last_6_months DESC
+    LIMIT 10
+  ) t
+)
+SELECT
+  tr.total_revenue_last_6_months,
+  t10.top10_revenue_last_6_months,
+  ROUND(
+    (t10.top10_revenue_last_6_months::numeric / NULLIF(tr.total_revenue_last_6_months::numeric, 0)) * 100,
+    2
+  ) AS top10_revenue_share_pct
+FROM total_revenue tr
+CROSS JOIN top10 t10;
+
+
+
 
 -- SQL Correction:
+
+-- Score: Correct
  
 
 
