@@ -747,15 +747,136 @@ CROSS JOIN top10 t10;
 
 -- Request 11
 -- Question:
+
+-- Request 11/25 [CORPORATE]
+-- Business question:
+-- Leadership wants a simple customer growth pulse.
+-- Since signup_date is not available,
+-- approximate new customers as customers whose first-ever sale
+-- occurred in the month.
+-- For the last 3 full calendar months (anchored to max warehouse date),
+-- report new customers per month and the running total across those months.
+-- Granularity: per month.
+
+-- Expected output:
+-- - reporting_month
+-- - new_customers
+-- - running_total_new_customers
+
  
 
 -- My SQL:
 
 
+
+WITH max_full_date AS (
+  SELECT MAX(full_date) AS max_date
+  FROM dw.dim_date
+),
+bounds AS (
+  SELECT
+    date_trunc('month', max_date) AS this_month_start,
+    date_trunc('month', max_date) - INTERVAL '3 months' AS start_3_full_months
+  FROM max_full_date
+),
+customers_first AS (
+  -- 1) primera compra histórica por cliente
+  SELECT
+    f.customer_sk,
+    MIN(d.full_date) AS first_sale_date
+  FROM dw.fact_sales f
+  JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+  GROUP BY f.customer_sk
+),
+monthly_new_customers AS (
+  -- 2) nuevos clientes por mes (según su primera compra)
+  SELECT
+    date_trunc('month', first_sale_date)::date AS reporting_month,
+    COUNT(*) AS new_customers
+  FROM customers_first
+  CROSS JOIN bounds b
+  WHERE first_sale_date >= b.start_3_full_months
+    AND first_sale_date <  b.this_month_start
+  GROUP BY 1
+)
+SELECT
+  reporting_month,
+  new_customers,
+  SUM(new_customers) OVER (ORDER BY reporting_month) AS running_total_new_customers
+FROM monthly_new_customers
+ORDER BY reporting_month;
+
+
+
+
+
 -- SQL Correction:
+
+
+-- Score: Partial
+
+-- What is missing (important)
+--
+-- The request specifies "last 3 full calendar months", but your query
+-- may return fewer than 3 rows if in any month there were no "new customers"
+-- (i.e., no first-ever purchases).
+--
+-- In corporate reporting, stakeholders usually expect to see all 3 months
+-- regardless of activity, even if the value is 0.
+--
+-- Additionally, "reporting_month" should be consistent (for example,
+-- always using the first day of the month is correct practice).
+-- It is recommended to explicitly generate the 3 reporting months
+-- to ensure completeness and consistent output structure.
+
+WITH max_full_date AS (
+  SELECT MAX(full_date)::date AS max_date
+  FROM dw.dim_date
+),
+bounds AS (
+  SELECT
+    date_trunc('month', max_date)::date AS this_month_start,
+    (date_trunc('month', max_date) - INTERVAL '3 months')::date AS start_3_full_months
+  FROM max_full_date
+),
+months AS (
+  SELECT generate_series(
+           (SELECT start_3_full_months FROM bounds),
+           (SELECT this_month_start - INTERVAL '1 month' FROM bounds),
+           INTERVAL '1 month'
+         )::date AS reporting_month
+),
+customers_first AS (
+  SELECT
+    f.customer_sk,
+    MIN(d.full_date)::date AS first_sale_date
+  FROM dw.fact_sales f
+  JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+  GROUP BY f.customer_sk
+),
+monthly_new_customers AS (
+  SELECT
+    date_trunc('month', first_sale_date)::date AS reporting_month,
+    COUNT(*) AS new_customers
+  FROM customers_first
+  CROSS JOIN bounds b
+  WHERE first_sale_date >= b.start_3_full_months
+    AND first_sale_date <  b.this_month_start
+  GROUP BY 1
+)
+SELECT
+  m.reporting_month,
+  COALESCE(n.new_customers, 0) AS new_customers,
+  SUM(COALESCE(n.new_customers, 0)) OVER (ORDER BY m.reporting_month) AS running_total_new_customers
+FROM months m
+LEFT JOIN monthly_new_customers n
+  ON n.reporting_month = m.reporting_month
+ORDER BY m.reporting_month;
+
+
  
-
-
 -- Request 12
 -- Question:
  
