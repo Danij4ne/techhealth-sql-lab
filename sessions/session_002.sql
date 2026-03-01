@@ -879,17 +879,60 @@ ORDER BY m.reporting_month;
  
 -- Request 12
 -- Question:
+
+-- Request 12/25 [INTERVIEW]
+-- Business question:
+-- Device analytics wants to compare engagement by device type.
+-- For the last 8 full calendar weeks (anchored to max warehouse date),
+-- return, per device_type:
+-- - distinct active customers (is_device_active = 1)
+-- - average daily usage minutes (only for active device-days)
+-- Granularity: per device_type.
+
+-- Expected output:
+-- - device_type
+-- - active_customers
+-- - avg_daily_usage_minutes
+
+ 
  
 
 -- My SQL:
 
 
--- SQL Correction:
- 
 
+WITH max_time AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date           
+) ,
+dates AS(
+    SELECT DATE_TRUNC('week', max_date) AS finish_week ,
+    DATE_TRUNC('week', max_date) - INTERVAL '8 weeks ' AS start_week
+    FROM max_time
+)  
+SELECT de.device_type , COUNT(DISTINCT f.customer_sk ) AS active_customers ,
+AVG(f.usage_minutes)::NUMERIC(10,2) AS avg_daily_usage_minutes
+FROM dw.dim_device de 
+JOIN dw.fact_device_usage_daily f
+ON f.device_sk = de.device_sk
+JOIN dw.dim_date d
+ON f.date_sk = d.date_sk
+CROSS JOIN dates s
+WHERE f.is_device_active = TRUE AND d.full_date >= s.start_week AND d.full_date < s.finish_week
+GROUP BY de.device_type
+
+
+
+-- SQL Correction:
+
+--Score: Correct
+ 
 
 -- Request 13
 -- Question:
+
+
+
  
 
 -- My SQL:
