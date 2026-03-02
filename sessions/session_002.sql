@@ -931,15 +931,60 @@ GROUP BY de.device_type
 -- Request 13
 -- Question:
 
+-- Request 13/25 [CORPORATE]
+-- Business question:
+-- Regional leadership wants to understand market mix.
+-- For the last full calendar month (anchored to max warehouse date),
+-- show, per market:
+-- - total revenue
+-- - distinct customers
+-- Also include each market’s share of total revenue for that month.
+-- Granularity: per market.
 
+-- Expected output:
+-- - market
+-- - total_revenue
+-- - distinct_customers
+-- - revenue_share_pct
 
- 
 
 -- My SQL:
 
 
+WITH max_day AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+
+) ,
+last_month AS (
+    SELECT 
+        DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS month_start,
+        DATE_TRUNC('month', max_date) AS month_end
+    FROM max_day
+    
+) ,
+revenue_market AS (
+    SELECT r.market , SUM(f.net_amount) AS  total_revenue , 
+    COUNT(DISTINCT f.customer_sk) AS distinct_customers
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN last_month l
+    WHERE d.full_date >= l.month_start AND d.full_date < l.month_end
+    GROUP BY r.market
+)
+SELECT market , total_revenue , distinct_customers , 
+ROUND(100.0 * total_revenue / NULLIF(SUM(total_revenue) OVER (), 0),2 ) AS revenue_share_pct
+FROM revenue_market
+ORDER BY total_revenue DESC;
+
+
+
 -- SQL Correction:
  
+ --Score: Correct
 
 
 -- Request 14
