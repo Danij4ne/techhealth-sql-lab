@@ -989,13 +989,105 @@ ORDER BY total_revenue DESC;
 
 -- Request 14
 -- Question:
+
+-- Request 14/25 [INTERVIEW]
+-- Business question:
+-- Product wants to see whether discounts are being used strategically.
+-- For the last 6 full calendar months (anchored to max warehouse date),
+-- return, per product_category:
+-- - total revenue
+-- - average discount rate (weighted by revenue before discount)
+-- Granularity: per product_category.
+
+-- Expected output:
+-- - product_category
+-- - total_revenue
+-- - weighted_avg_discount_rate
  
 
 -- My SQL:
 
 
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date                  
+    FROM dw.dim_date
+
+),
+calendar_months AS(
+    SELECT 
+    DATE_TRUNC('month',max_date) AS end_month ,
+    DATE_TRUNC('month',max_date) - INTERVAL '6 months' AS start_month
+    FROM max_dates
+    
+)
+SELECT d.product_category , SUM(f.net_amount) AS total_revenue , 
+  ROUND( SUM(f.quantity * f.unit_price * f.discount) / SUM(f.quantity * f.unit_price),2) AS weighted_avg_discount
+  FROM dw.fact_sales f
+  JOIN dw.dim_product d
+  ON f.product_sk = d.product_sk
+  JOIN dw.dim_date a
+  ON f.date_sk = a.date_sk
+  CROSS JOIN calendar_months c
+  WHERE a.full_date >= c.start_month AND a.full_date < c.end_month 
+  GROUP BY d.product_category
+
+
+
 -- SQL Correction:
  
+ --Score: Partial
+
+ -- ==========================================
+-- Notes: Adjustments for weighted_avg_discount_rate
+-- ==========================================
+
+-- 1) Ensure metric name matches the requirement exactly:
+--    Use alias: weighted_avg_discount_rate
+
+-- 2) Clarify discount scale:
+--    If discount is stored as 10 = 10%, result will be 0–100 scale.
+--    If discount is stored as 0.10 = 10%, result will be 0–1 scale.
+--    Choose one scale and be consistent (report-ready usually 0–100).
+
+-- 3) Make division NULL-safe:
+--    Use NULLIF() in denominator to prevent division-by-zero errors.
+
+-- 4) Optional: Multiply by 100.0
+--    Only if discount is stored as decimal (0–1)
+--    and reporting requires percentage (0–100).
+
+-- 5) Add stable ORDER BY when using GROUP BY:
+--    Corporate-style queries should return deterministic ordering.
+
+WITH max_dates AS (
+    SELECT MAX(full_date)::date AS max_date
+    FROM dw.dim_date
+),
+bounds AS (
+    SELECT
+        (date_trunc('month', max_date))::date AS end_month,
+        (date_trunc('month', max_date) - INTERVAL '6 months')::date AS start_month
+    FROM max_dates
+)
+SELECT
+    p.product_category AS product_category,
+    SUM(f.net_amount) AS total_revenue,
+    ROUND(
+        (SUM(f.quantity * f.unit_price * f.discount)::numeric
+         / NULLIF(SUM(f.quantity * f.unit_price)::numeric, 0)),
+        4
+    ) AS weighted_avg_discount_rate
+FROM dw.fact_sales f
+JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+CROSS JOIN bounds b
+WHERE d.full_date::date >= b.start_month
+  AND d.full_date::date <  b.end_month
+GROUP BY p.product_category
+ORDER BY total_revenue DESC, product_category;
 
 
 -- Request 15
