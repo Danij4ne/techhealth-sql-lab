@@ -1092,13 +1092,129 @@ ORDER BY total_revenue DESC, product_category;
 
 -- Request 15
 -- Question:
+
+-- Request 15/25 [CORPORATE]
+-- Business question:
+-- Executive team wants a simple cross-domain view of value vs engagement.
+-- For the last full calendar month (anchored to max warehouse date),
+-- show, per subscription type:
+-- - total revenue
+-- - distinct active customers (customers with at least 1 active device-day)
+-- Granularity: per subscription type.
+
+-- Expected output:
+-- - subscription_type
+-- - total_revenue
+-- - active_customers
+
  
 
 -- My SQL:
 
 
+
+WITH max_cal AS (
+  SELECT MAX(full_date) AS max_date
+  FROM dw.dim_date
+),
+calendars AS (
+  SELECT
+    DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS start_month,
+    DATE_TRUNC('month', max_date)  AS end_month
+  FROM max_cal
+) 
+SELECT c.subscription_type , SUM(f.net_amount) AS total_revenue , 
+COUNT(DISTINCT c.customer_sk ) AS active_customers
+FROM dw.dim_customer c
+JOIN dw.fact_sales f
+ON f.customer_sk = c.customer_sk
+JOIN dw.fact_device_usage_daily d
+ON d.customer_sk = c.customer_sk
+JOIN dw.dim_date a
+ON a.date_sk = d.date_sk
+CROSS JOIN calendars s
+WHERE a.full_date >= s.start_month AND a.full_date < s.end_month AND d.is_device_active = True
+GROUP BY c.subscription_type
+ORDER BY active_customers DESC
+
+
+
+
+
+
 -- SQL Correction:
  
+-- Score: Partial
+
+-- IMPORTANT PROBLEM (double counting / revenue inflation)
+--
+-- Issue:
+-- You are doing SUM(f.net_amount) while JOINing fact_sales to fact_device_usage_daily.
+--
+-- Why it’s a problem:
+-- fact_device_usage_daily has multiple rows per customer per month (one per device-day).
+-- When you join sales (fact_sales) to device usage (fact_device_usage_daily) by customer_sk,
+-- each sales row can be repeated once for every active device-day.
+--
+-- Example:
+-- If a customer has 10 active device-days in the month,
+-- their sales rows may appear 10 times in the joined result.
+-- SUM(f.net_amount) will then be multiplied by ~10  --> revenue is inflated (double counting).
+--
+-- Additional note (date filter mismatch):
+-- The month filter is applied using a.full_date (from device usage via dim_date),
+-- but sales are not filtered to the same month range.
+-- This becomes less of an issue once you restructure (e.g., separate aggregates),
+-- but in the current query it adds inconsistency.
+
+
+WITH max_cal AS (
+  SELECT MAX(full_date)::date AS max_date
+  FROM dw.dim_date
+),
+month_window AS (
+  SELECT
+    (date_trunc('month', max_date) - INTERVAL '1 month')::date AS start_month,
+    (date_trunc('month', max_date))::date AS end_month
+  FROM max_cal
+),
+revenue_by_sub AS (
+  SELECT
+    c.subscription_type,
+    SUM(f.net_amount) AS total_revenue
+  FROM dw.fact_sales f
+  JOIN dw.dim_customer c
+    ON f.customer_sk = c.customer_sk
+  JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+  CROSS JOIN month_window w
+  WHERE d.full_date::date >= w.start_month
+    AND d.full_date::date <  w.end_month
+  GROUP BY c.subscription_type
+),
+active_customers_by_sub AS (
+  SELECT
+    c.subscription_type,
+    COUNT(DISTINCT ddu.customer_sk) AS active_customers
+  FROM dw.fact_device_usage_daily ddu
+  JOIN dw.dim_customer c
+    ON ddu.customer_sk = c.customer_sk
+  JOIN dw.dim_date dd
+    ON ddu.date_sk = dd.date_sk
+  CROSS JOIN month_window w
+  WHERE dd.full_date::date >= w.start_month
+    AND dd.full_date::date <  w.end_month
+    AND ddu.is_device_active = TRUE
+  GROUP BY c.subscription_type
+)
+SELECT
+  COALESCE(r.subscription_type, a.subscription_type) AS subscription_type,
+  COALESCE(r.total_revenue, 0) AS total_revenue,
+  COALESCE(a.active_customers, 0) AS active_customers
+FROM revenue_by_sub r
+FULL JOIN active_customers_by_sub a
+  ON a.subscription_type = r.subscription_type
+ORDER BY active_customers DESC, total_revenue DESC, subscription_type;
 
 
 -- Request 16
