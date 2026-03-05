@@ -1219,13 +1219,113 @@ ORDER BY active_customers DESC, total_revenue DESC, subscription_type;
 
 -- Request 16
 -- Question:
+
+-- Request 16/25 [INTERVIEW]
+-- Business question:
+-- Retention analytics wants a cohort-based view with “missing activity” explicitly shown.
+-- Define cohort_month as the month of a customer’s first-ever sale.
+-- Consider cohorts within the last 6 full calendar months (anchored to max warehouse date).
+-- For each cohort_month, calculate:
+-- - number of customers in the cohort
+-- - number of those customers who made at least one purchase in the 2nd calendar month after cohort_month
+-- - month2_return_rate_pct
+-- Also ensure cohorts with zero month-2 returns still appear.
+
+-- Expected output:
+-- - cohort_month
+-- - cohort_customers
+-- - month2_returning_customers
+-- - month2_return_rate_pct
  
 
 -- My SQL:
 
+WITH max_cal AS (
+  SELECT MAX(full_date) AS max_date
+  FROM dw.dim_date
+),
+bounds AS (
+  SELECT
+    DATE_TRUNC('month', max_date) AS end_month,                 
+    DATE_TRUNC('month', max_date) - INTERVAL '6 month' AS start_month
+  FROM max_cal
+),
+
+first_sale AS (
+  SELECT
+    c.customer_id,
+    MIN(d.full_date) AS first_sale_date
+  FROM dw.fact_sales f
+  JOIN dw.dim_customer c ON c.customer_sk = f.customer_sk
+  JOIN dw.dim_date d     ON d.date_sk     = f.date_sk
+  GROUP BY c.customer_id
+),
+
+cohorts AS (
+  SELECT
+    fs.customer_id,
+    DATE_TRUNC('month', fs.first_sale_date) AS cohort_month
+  FROM first_sale fs
+),
+
+cohorts_in_scope AS (
+  SELECT c.*
+  FROM cohorts c
+  CROSS JOIN bounds b
+  WHERE c.cohort_month >= b.start_month
+    AND c.cohort_month <  b.end_month
+),
+
+
+cohort_counts AS (
+  SELECT
+    cohort_month,
+    COUNT(DISTINCT customer_id) AS cohort_customers
+  FROM cohorts_in_scope
+  GROUP BY cohort_month
+),
+ 
+customer_purchase_months AS (
+  SELECT DISTINCT
+    c.customer_id,
+    DATE_TRUNC('month', d.full_date) AS purchase_month
+  FROM dw.fact_sales f
+  JOIN dw.dim_customer c ON c.customer_sk = f.customer_sk
+  JOIN dw.dim_date d     ON d.date_sk     = f.date_sk
+),
+
+month2_returns AS (
+  SELECT
+    ci.cohort_month,
+    COUNT(DISTINCT ci.customer_id) AS month2_returning_customers
+  FROM cohorts_in_scope ci
+  JOIN customer_purchase_months pm
+    ON pm.customer_id = ci.customer_id
+   AND pm.purchase_month = ci.cohort_month + INTERVAL '2 month'
+  GROUP BY ci.cohort_month
+)
+
+SELECT
+  cc.cohort_month,
+  cc.cohort_customers,
+  COALESCE(m2.month2_returning_customers, 0) AS month2_returning_customers,
+  CASE
+    WHEN cc.cohort_customers = 0 THEN 0
+    ELSE ROUND(
+      (COALESCE(m2.month2_returning_customers, 0) * 100.0) / cc.cohort_customers
+      , 2
+    )
+  END AS month2_return_rate_pct
+FROM cohort_counts cc
+LEFT JOIN month2_returns m2
+  ON m2.cohort_month = cc.cohort_month
+ORDER BY cc.cohort_month;
+
+
 
 -- SQL Correction:
  
+-- Score: Correct
 
 
 -- Request 17
