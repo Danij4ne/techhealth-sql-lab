@@ -1330,13 +1330,146 @@ ORDER BY cc.cohort_month;
 
 -- Request 17
 -- Question:
+
+-- Request 17/25 [CORPORATE]
+-- Business question:
+-- Finance wants a reconciliation-style report that never hides missing sides.
+-- For the last full calendar month (anchored to max warehouse date),
+-- produce a per-customer view showing:
+-- - customer_identifier
+-- - revenue_last_month
+-- - active_device_days_last_month
+-- - a label that classifies each customer into one of:
+--   "Sales only" (revenue > 0 but zero active device-days),
+--   "Engagement only" (zero revenue but has active device-days),
+--   "Both",
+--   "Neither"
+-- Important: Customers must appear even if they have sales but no device usage,
+-- or device usage but no sales, or neither.
+-- Granularity: per customer.
+
+-- Expected output:
+-- - customer_identifier
+-- - revenue_last_month
+-- - active_device_days_last_month
+-- - customer_classification
+
+
  
 -- My SQL:
 
 
--- SQL Correction:
- 
 
+WITH max_date AS(
+    SELECT MAX(full_date) AS max_full_date
+    FROM dw.dim_date
+    ) ,
+months AS (
+    SELECT 
+    DATE_TRUNC('month',max_full_date) AS finish_month ,
+    DATE_TRUNC('month',max_full_date) - INTERVAL '1 month' AS start_month 
+    FROM max_date
+    ),
+customers_data AS (
+    SELECT c.customer_id , SUM(f.net_amount) AS revenue_last_month , SUM(u.active_days) AS active_device_days_last_month
+    FROM dw.dim_customer c
+    LEFT JOIN dw.fact_sales f
+    ON c.customer_sk = f.customer_sk
+    LEFT JOIN dw.fact_user_engagement_monthly u
+    ON c.customer_sk = u.customer_sk
+    LEFT JOIN dw.dim_date a
+    ON f.date_sk = a.date_sk
+    CROSS JOIN months m
+    WHERE a.full_date >= m.start_month AND a.full_date < m.finish_month 
+    GROUP BY c.customer_id 
+) 
+SELECT customer_id , revenue_last_month , active_device_days_last_month ,
+CASE
+    WHEN revenue_last_month > 0 AND  active_device_days_last_month = 0 THEN 'Sales only'
+    WHEN revenue_last_month = 0 AND  active_device_days_last_month > 0 THEN 'Engagement only'
+    WHEN revenue_last_month > 0 AND  active_device_days_last_month > 0 THEN 'Both'
+    WHEN revenue_last_month = 0 AND  active_device_days_last_month = 0 THEN 'Neither'
+END AS customer_classification
+FROM customers_data
+
+
+
+
+-- SQL Correction:
+
+-- Score: Wrong
+
+-- Used dw.fact_user_engagement_monthly, which is not part of the model we are using.
+
+-- The WHERE a.full_date ... condition applied to a table linked to sales
+-- effectively turns the LEFT JOIN on sales into INNER JOIN behavior,
+-- so customers without sales are lost.
+
+-- The query does not guarantee customers that have only engagement
+-- or customers that have neither sales nor engagement.
+
+-- SUM(u.active_days) can also be duplicated when combined with sales
+-- if engagement is not aggregated separately before the join.
+
+
+ 
+WITH max_date AS (
+    SELECT MAX(full_date)::date AS max_full_date
+    FROM dw.dim_date
+),
+month_window AS (
+    SELECT
+        (date_trunc('month', max_full_date) - INTERVAL '1 month')::date AS start_month,
+        date_trunc('month', max_full_date)::date AS finish_month
+    FROM max_date
+),
+sales_per_customer AS (
+    SELECT
+        c.customer_id AS customer_identifier,
+        SUM(f.net_amount) AS revenue_last_month
+    FROM dw.dim_customer c
+    JOIN dw.fact_sales f
+        ON c.customer_sk = f.customer_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_window m
+    WHERE d.full_date::date >= m.start_month
+      AND d.full_date::date <  m.finish_month
+    GROUP BY c.customer_id
+),
+engagement_per_customer AS (
+    SELECT
+        c.customer_id AS customer_identifier,
+        COUNT(DISTINCT CASE WHEN u.is_device_active = TRUE THEN u.date_sk END) AS active_device_days_last_month
+    FROM dw.dim_customer c
+    JOIN dw.fact_device_usage_daily u
+        ON c.customer_sk = u.customer_sk
+    JOIN dw.dim_date d
+        ON u.date_sk = d.date_sk
+    CROSS JOIN month_window m
+    WHERE d.full_date::date >= m.start_month
+      AND d.full_date::date <  m.finish_month
+    GROUP BY c.customer_id
+)
+SELECT
+    c.customer_id AS customer_identifier,
+    COALESCE(s.revenue_last_month, 0) AS revenue_last_month,
+    COALESCE(e.active_device_days_last_month, 0) AS active_device_days_last_month,
+    CASE
+        WHEN COALESCE(s.revenue_last_month, 0) > 0
+         AND COALESCE(e.active_device_days_last_month, 0) = 0 THEN 'Sales only'
+        WHEN COALESCE(s.revenue_last_month, 0) = 0
+         AND COALESCE(e.active_device_days_last_month, 0) > 0 THEN 'Engagement only'
+        WHEN COALESCE(s.revenue_last_month, 0) > 0
+         AND COALESCE(e.active_device_days_last_month, 0) > 0 THEN 'Both'
+        ELSE 'Neither'
+    END AS customer_classification
+FROM dw.dim_customer c
+LEFT JOIN sales_per_customer s
+    ON c.customer_id = s.customer_identifier
+LEFT JOIN engagement_per_customer e
+    ON c.customer_id = e.customer_identifier
+ORDER BY customer_identifier;
 
 -- Request 18
 -- Question:
