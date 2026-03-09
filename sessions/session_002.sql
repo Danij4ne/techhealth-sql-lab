@@ -1473,13 +1473,135 @@ ORDER BY customer_identifier;
 
 -- Request 18
 -- Question:
+
+-- Request 18/25 [INTERVIEW]
+-- Business question:
+-- Commercial strategy wants a ranking report that compares each product
+-- against others inside its own category.
+-- For the last 9 full calendar months (anchored to max warehouse date),
+-- return all products with:
+-- - product_identifier
+-- - product_category
+-- - total_revenue
+-- - revenue_rank_within_category
+-- - revenue_gap_vs_category_leader
+-- - revenue_share_within_category_pct
+-- Include products even if they generated zero revenue in the period.
+-- Granularity: per product.
+
+-- Expected output:
+-- - product_identifier
+-- - product_category
+-- - total_revenue
+-- - revenue_rank_within_category
+-- - revenue_gap_vs_category_leader
+-- - revenue_share_within_category_pct
  
 
 -- My SQL:
 
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+) ,
+dates AS ( 
+    SELECT 
+    DATE_TRUNC('month',max_date) AS last_month ,
+    DATE_TRUNC('month', max_date) - INTERVAL '9 months' AS first_month
+    FROM max_dates
+),
+the_products AS (
+    SELECT p.product_id , p.product_category , COALESCE(SUM(f.net_amount),0 )AS total_revenue 
+    FROM dw.dim_product p
+    LEFT JOIN dw.fact_sales f
+    ON p.product_sk = f.product_sk
+    LEFT JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN dates a
+    WHERE d.full_date >= a.first_month AND d.full_date < a.last_month
+    GROUP BY p.product_id , p.product_category
+) 
+    SELECT product_id, product_category, total_revenue, 
+    DENSE_RANK() OVER(PARTITION BY product_category ORDER BY total_revenue DESC) AS revenue_rank_within_category,
+    MAX(total_revenue) OVER(PARTITION BY product_category ) - total_revenue AS revenue_gap_vs_category_leader ,
+    total_revenue / SUM(total_revenue) OVER (PARTITION BY product_category) * 100 AS revenue_share_within_category_pct
+    FROM the_products
+
 
 -- SQL Correction:
- 
+
+-- Score: Partial
+
+-- The window functions are correctly designed:
+-- - DENSE_RANK for ranking products within their category
+-- - revenue gap vs category leader
+-- - revenue share within the category
+
+-- The time window of the last 9 full calendar months is also correctly defined.
+
+-- However, there is a key issue:
+
+-- Using a WHERE condition on d.full_date (a table joined with LEFT JOIN)
+-- effectively converts the LEFT JOIN into INNER JOIN behavior.
+
+-- As a consequence, products with no sales during the period are removed
+-- from the result set.
+
+-- This breaks the most important requirement of the task:
+-- "Include products even if they generated zero revenue in the period."
+
+-- Additionally, the revenue share percentage may produce NULL values
+-- or a conceptual error if the total revenue of a category equals 0.
+
+WITH max_dates AS (
+    SELECT MAX(full_date)::date AS max_date
+    FROM dw.dim_date
+),
+bounds AS (
+    SELECT
+        date_trunc('month', max_date)::date AS last_month,
+        (date_trunc('month', max_date) - INTERVAL '9 months')::date AS first_month
+    FROM max_dates
+),
+sales_in_scope AS (
+    SELECT
+        f.product_sk,
+        SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN bounds b
+    WHERE d.full_date::date >= b.first_month
+      AND d.full_date::date <  b.last_month
+    GROUP BY f.product_sk
+),
+products_with_revenue AS (
+    SELECT
+        p.product_id AS product_identifier,
+        p.product_category,
+        COALESCE(s.total_revenue, 0) AS total_revenue
+    FROM dw.dim_product p
+    LEFT JOIN sales_in_scope s
+        ON p.product_sk = s.product_sk
+)
+SELECT
+    product_identifier,
+    product_category,
+    total_revenue,
+    DENSE_RANK() OVER (
+        PARTITION BY product_category
+        ORDER BY total_revenue DESC, product_identifier
+    ) AS revenue_rank_within_category,
+    MAX(total_revenue) OVER (
+        PARTITION BY product_category
+    ) - total_revenue AS revenue_gap_vs_category_leader,
+    ROUND(
+        100.0 * total_revenue
+        / NULLIF(SUM(total_revenue) OVER (PARTITION BY product_category), 0),
+        2
+    ) AS revenue_share_within_category_pct
+FROM products_with_revenue
+ORDER BY product_category, revenue_rank_within_category, product_identifier;
 
 
 -- Request 19
