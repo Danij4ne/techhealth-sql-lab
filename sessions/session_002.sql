@@ -1607,11 +1607,232 @@ ORDER BY product_category, revenue_rank_within_category, product_identifier;
 -- Request 19
 -- Question:
  
+ -- Request 19/25 [CORPORATE]
+-- Business question:
+-- Operations wants a completeness-style device report that makes gaps visible.
+-- For the last 12 full calendar weeks (anchored to max warehouse date),
+-- show, per week and per device_type:
+-- - total distinct devices
+-- - distinct devices with at least one active day
+-- - distinct devices with zero activity all week
+-- Ensure weeks appear even when a device_type has no active devices in that week.
+-- Granularity: per week, per device_type.
+
+-- Expected output:
+-- - reporting_week
+-- - device_type
+-- - total_distinct_devices
+-- - devices_with_activity
+-- - devices_with_zero_activity
+
+ 
 
 -- My SQL:
 
+
+
+
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+) ,
+weeks AS (
+    SELECT
+    DATE_TRUNC('week', max_date) AS last_week,
+    DATE_TRUNC('week', max_date) - INTERVAL '12 weeks' AS first_week
+    FROM max_dates
+),
+reporting_weeks AS (
+    SELECT
+        generate_series(
+            first_week,
+            last_week - INTERVAL '1 week',
+            INTERVAL '1 week'
+        ) AS reporting_week
+    FROM weeks
+),
+base_device AS (
+    SELECT
+        d.device_sk,
+        d.device_id,
+        d.device_type
+    FROM dw.dim_device d
+),
+device_weeks AS (
+    SELECT
+        rw.reporting_week,
+        d.device_sk,
+        d.device_id,
+        d.device_type
+    FROM reporting_weeks rw
+    CROSS JOIN base_device d
+),
+activity_by_device_week AS (
+    SELECT
+        DATE_TRUNC('week', a.full_date) AS reporting_week,
+        f.device_sk
+    FROM dw.fact_device_usage_daily f
+    JOIN dw.dim_date a
+        ON f.date_sk = a.date_sk
+    CROSS JOIN weeks w
+    WHERE a.full_date >= w.first_week
+      AND a.full_date <  w.last_week
+    GROUP BY
+        DATE_TRUNC('week', a.full_date),
+        f.device_sk
+),
+joined AS (
+    SELECT
+        dw.reporting_week,
+        dw.device_type,
+        dw.device_id,
+        CASE
+            WHEN abw.device_sk IS NOT NULL THEN 1
+            ELSE 0
+        END AS has_activity
+    FROM device_weeks dw
+    LEFT JOIN activity_by_device_week abw
+        ON dw.reporting_week = abw.reporting_week
+       AND dw.device_sk = abw.device_sk
+)
+SELECT
+    reporting_week,
+    device_type,
+    COUNT(DISTINCT device_id) AS total_distinct_devices,
+    COUNT(DISTINCT CASE WHEN has_activity = 1 THEN device_id END) AS devices_with_activity,
+    COUNT(DISTINCT CASE WHEN has_activity = 0 THEN device_id END) AS devices_with_zero_activity
+FROM joined
+GROUP BY
+    reporting_week,
+    device_type
+ORDER BY
+    reporting_week,
+    device_type;
+
+
+
  
 -- SQL Correction:
+
+-- Score: Partial
+
+-- Score: Partial
+
+-- Correct parts of the solution
+
+-- The overall structure is good.
+-- You correctly generate the last 12 weeks.
+
+-- CROSS JOIN with devices is used to create all possible combinations
+-- of week × device.
+
+-- LEFT JOIN is then used so that combinations without activity
+-- are not lost.
+
+-- This satisfies the requirement of showing gaps
+-- (weeks where devices had no activity).
+
+-- The metrics below are correctly designed:
+-- total_distinct_devices
+-- devices_with_zero_activity
+
+
+-- Main issue in the query
+
+-- The metric devices_with_activity should count devices
+-- that had at least one active day during the week.
+
+-- However, in the CTE activity_by_device_week
+-- there is no filter for:
+
+-- f.is_device_active = TRUE
+
+-- Because of this, the query currently treats
+-- any weekly device record as activity.
+
+-- This means a device can be counted as "active"
+-- even if it was inactive during the entire week.
+
+
+-- Correct logic
+
+-- The activity CTE should filter real activity:
+
+-- WHERE f.is_device_active = TRUE
+
+-- This guarantees that devices_with_activity
+-- counts only devices with at least one active day.
+
+WITH max_dates AS (
+    SELECT MAX(full_date)::date AS max_date
+    FROM dw.dim_date
+),
+weeks AS (
+    SELECT
+        date_trunc('week', max_date)::date AS last_week,
+        (date_trunc('week', max_date) - INTERVAL '12 weeks')::date AS first_week
+    FROM max_dates
+),
+reporting_weeks AS (
+    SELECT generate_series(
+        (SELECT first_week FROM weeks),
+        (SELECT last_week - INTERVAL '1 week' FROM weeks),
+        INTERVAL '1 week'
+    )::date AS reporting_week
+),
+base_device AS (
+    SELECT
+        d.device_sk,
+        d.device_id,
+        d.device_type
+    FROM dw.dim_device d
+),
+device_weeks AS (
+    SELECT
+        rw.reporting_week,
+        bd.device_sk,
+        bd.device_id,
+        bd.device_type
+    FROM reporting_weeks rw
+    CROSS JOIN base_device bd
+),
+active_device_by_week AS (
+    SELECT
+        date_trunc('week', dd.full_date)::date AS reporting_week,
+        f.device_sk
+    FROM dw.fact_device_usage_daily f
+    JOIN dw.dim_date dd
+        ON f.date_sk = dd.date_sk
+    CROSS JOIN weeks w
+    WHERE dd.full_date::date >= w.first_week
+      AND dd.full_date::date <  w.last_week
+      AND f.is_device_active = TRUE
+    GROUP BY 1, 2
+),
+joined AS (
+    SELECT
+        dw.reporting_week,
+        dw.device_type,
+        dw.device_id,
+        CASE
+            WHEN adw.device_sk IS NOT NULL THEN 1
+            ELSE 0
+        END AS has_activity
+    FROM device_weeks dw
+    LEFT JOIN active_device_by_week adw
+        ON dw.reporting_week = adw.reporting_week
+       AND dw.device_sk = adw.device_sk
+)
+SELECT
+    reporting_week,
+    device_type,
+    COUNT(DISTINCT device_id) AS total_distinct_devices,
+    COUNT(DISTINCT CASE WHEN has_activity = 1 THEN device_id END) AS devices_with_activity,
+    COUNT(DISTINCT CASE WHEN has_activity = 0 THEN device_id END) AS devices_with_zero_activity
+FROM joined
+GROUP BY reporting_week, device_type
+ORDER BY reporting_week, device_type;
+
 
 
 -- Request 20
