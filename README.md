@@ -19,8 +19,6 @@
 ![Daily Practice](https://img.shields.io/badge/Practice-Daily%20Challenges-1D4ED8?style=flat)
 ![License](https://img.shields.io/badge/License-MIT-334155?style=flat)
 
-
-
 TechHealth SQL Lab is a structured SQL analytics environment built around a realistic enterprise database and a controlled session-based challenge system.
 It simulates corporate reporting, operational analytics, and technical SQL interview scenarios over a single, consistent dataset deployed on multiple SQL engines.
 
@@ -71,7 +69,7 @@ These files represent the authoritative source of truth for the TechHealth data 
 
 Contains the full specification of the Hybrid SQL Master control system.
 
-This layer governs how business requests are generated, how SQL responses are evaluated, how difficulty progresses, and how performance is scored.  
+This layer governs how business requests are generated, how SQL responses are evaluated, how difficulty progresses, and how performance is scored.
 It allows analytical sessions to be executed using either T-SQL or PostgreSQL syntax while operating on the same underlying data model.
 
 ---
@@ -113,17 +111,6 @@ TechHealth SQL Lab combines three elements into a single analytical system:
 - A session‑based record of analytical output and quality metrics
 
 Together, these components create a controlled environment for producing, validating, and tracking SQL analytics across multiple database engines.
-
----
-
-## Data Source
-
-The base database schema is adapted from the IBM Data Engineering Professional Certificate
-and is used strictly for educational and portfolio demonstration purposes.
-
-All analytical logic, system architecture, multi-engine compatibility, session tracking,
-evaluation framework, and repository structure were independently designed and implemented
-as part of this project.
 
 ---
 

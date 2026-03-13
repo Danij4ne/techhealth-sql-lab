@@ -1837,13 +1837,214 @@ ORDER BY reporting_week, device_type;
 
 -- Request 20
 -- Question:
+
+-- Request 20/25 [INTERVIEW]
+-- Business question:
+-- Commercial analytics wants a month-over-month exception report that keeps both sides visible.
+-- For the last 2 full calendar months (anchored to max warehouse date),
+-- compare product performance between:
+-- - the most recent full month
+-- - the immediately previous full month
+-- Return all products that appear in either month, even if they are missing in the other.
+-- For each product, calculate:
+-- - product_identifier
+-- - current_month_revenue
+-- - previous_month_revenue
+-- - revenue_change
+-- - revenue_change_pct
+-- - revenue_rank_current_month_within_category
+-- Granularity: per product.
+
+-- Expected output:
+-- - product_identifier
+-- - current_month_label
+-- - previous_month_label
+-- - current_month_revenue
+-- - previous_month_revenue
+-- - revenue_change
+-- - revenue_change_pct
+-- - revenue_rank_current_month_within_category
  
 
 -- My SQL:
 
+WITH max_dates AS (
+    SELECT MAX(full_date)::DATE AS max_date
+    FROM dw.dim_date
+),
+months AS (
+    SELECT
+        (DATE_TRUNC('month', max_date) - INTERVAL '1 month')::DATE AS current_month_start,
+        (DATE_TRUNC('month', max_date) - INTERVAL '2 months')::DATE AS previous_month_start,
+        DATE_TRUNC('month', max_date)::DATE AS current_month_end_exclusive
+    FROM max_dates
+),
+base_product AS (
+    SELECT
+        p.product_id,
+        p.product_category,
+        f.net_amount,
+        d.full_date
+    FROM dw.dim_product p
+    LEFT JOIN dw.fact_sales f
+        ON p.product_sk = f.product_sk
+    LEFT JOIN dw.dim_date d
+        ON d.date_sk = f.date_sk
+),
+current_month AS (
+    SELECT
+        b.product_id,
+        b.product_category,
+        SUM(b.net_amount) AS current_month_revenue
+    FROM base_product b
+    CROSS JOIN months m
+    WHERE b.full_date >= m.current_month_start
+      AND b.full_date < m.current_month_end_exclusive
+    GROUP BY b.product_id, b.product_category
+),
+previous_month AS (
+    SELECT
+        b.product_id,
+        b.product_category,
+        SUM(b.net_amount) AS previous_month_revenue
+    FROM base_product b
+    CROSS JOIN months m
+    WHERE b.full_date >= m.previous_month_start
+      AND b.full_date < m.current_month_start
+    GROUP BY b.product_id, b.product_category
+)
+SELECT
+    COALESCE(c.product_id, p.product_id) AS product,
+    COALESCE(c.current_month_revenue, 0) AS current_month_revenue,
+    COALESCE(p.previous_month_revenue, 0) AS previous_month_revenue,
+    COALESCE(c.current_month_revenue, 0) - COALESCE(p.previous_month_revenue, 0) AS revenue_change,
+    CASE
+        WHEN COALESCE(p.previous_month_revenue, 0) = 0 THEN 0
+        ELSE (
+            (COALESCE(c.current_month_revenue, 0) - COALESCE(p.previous_month_revenue, 0))
+            / p.previous_month_revenue
+        ) * 100
+    END AS revenue_change_pct,
+    RANK() OVER (
+        PARTITION BY COALESCE(c.product_category, p.product_category)
+        ORDER BY COALESCE(c.current_month_revenue, 0) DESC
+    ) AS revenue_rank_current_month_within_category
+FROM current_month c
+FULL JOIN previous_month p
+    ON c.product_id = p.product_id;
+
+
+
 
 -- SQL Correction:
  
+ --Score: Partial
+
+-- Correct design
+-- Using FULL JOIN is correct because it keeps products that appear in one month
+-- even if they are missing in the other month.
+-- This ensures the report includes all products present in either period.
+
+-- Correct metrics
+-- current_month_revenue → total revenue for the most recent full month.
+-- previous_month_revenue → total revenue for the month before that.
+-- revenue_change → difference between current and previous revenue.
+-- revenue_change_pct → percentage change between the two months.
+
+-- Missing required fields
+-- The output should also include:
+-- current_month_label  → label for the most recent full month.
+-- previous_month_label → label for the previous full month.
+
+-- Naming requirement
+-- The expected column name is:
+-- product_identifier
+-- not simply product.
+
+-- Ranking issue
+-- The ranking within category should have a deterministic tie-breaker.
+-- If two products have the same revenue, the order should still be stable.
+
+-- Example of deterministic ranking
+-- ORDER BY current_month_revenue DESC, product_id
+
+-- Ranking function note
+-- RANK() allows ties and can skip positions (1,1,3).
+-- This is technically valid but may produce unstable reports.
+-- Adding a secondary sort key ensures consistent ordering.
+
+-- Percentage change edge case
+-- If previous_month_revenue = 0:
+-- returning 0 for revenue_change_pct can be misleading.
+-- In reporting it is usually better to return NULL
+-- to avoid interpreting growth from zero as a real percentage increase.
+
+WITH max_dates AS (
+    SELECT MAX(full_date)::date AS max_date
+    FROM dw.dim_date
+),
+months AS (
+    SELECT
+        (date_trunc('month', max_date) - INTERVAL '1 month')::date AS current_month_start,
+        (date_trunc('month', max_date) - INTERVAL '2 months')::date AS previous_month_start,
+        date_trunc('month', max_date)::date AS current_month_end_exclusive
+    FROM max_dates
+),
+current_month AS (
+    SELECT
+        p.product_id AS product_identifier,
+        p.product_category,
+        SUM(f.net_amount) AS current_month_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN months m
+    WHERE d.full_date::date >= m.current_month_start
+      AND d.full_date::date <  m.current_month_end_exclusive
+    GROUP BY p.product_id, p.product_category
+),
+previous_month AS (
+    SELECT
+        p.product_id AS product_identifier,
+        p.product_category,
+        SUM(f.net_amount) AS previous_month_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN months m
+    WHERE d.full_date::date >= m.previous_month_start
+      AND d.full_date::date <  m.current_month_start
+    GROUP BY p.product_id, p.product_category
+)
+SELECT
+    COALESCE(c.product_identifier, p.product_identifier) AS product_identifier,
+    to_char(m.current_month_start, 'YYYY-MM') AS current_month_label,
+    to_char(m.previous_month_start, 'YYYY-MM') AS previous_month_label,
+    COALESCE(c.current_month_revenue, 0) AS current_month_revenue,
+    COALESCE(p.previous_month_revenue, 0) AS previous_month_revenue,
+    COALESCE(c.current_month_revenue, 0) - COALESCE(p.previous_month_revenue, 0) AS revenue_change,
+    ROUND(
+        100.0 * (
+            COALESCE(c.current_month_revenue, 0) - COALESCE(p.previous_month_revenue, 0)
+        ) / NULLIF(p.previous_month_revenue, 0),
+        2
+    ) AS revenue_change_pct,
+    ROW_NUMBER() OVER (
+        PARTITION BY COALESCE(c.product_category, p.product_category)
+        ORDER BY COALESCE(c.current_month_revenue, 0) DESC,
+                 COALESCE(c.product_identifier, p.product_identifier)
+    ) AS revenue_rank_current_month_within_category
+FROM current_month c
+FULL JOIN previous_month p
+    ON c.product_identifier = p.product_identifier
+CROSS JOIN months m
+ORDER BY product_identifier;
+
+
 
 
 -- Request 21
