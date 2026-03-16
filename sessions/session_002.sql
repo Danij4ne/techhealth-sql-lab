@@ -2046,16 +2046,212 @@ ORDER BY product_identifier;
 
 
 
-
 -- Request 21
 -- Question:
+
+-- Request 21/25 [CORPORATE]
+-- Business question:
+-- Customer strategy wants a segmentation view that preserves customers with no recent activity.
+-- Using the last 120 days (anchored to max warehouse date),
+-- classify every customer into value tiers based on their revenue percentile
+-- among customers with revenue in that period.
+-- Then return, per value_tier:
+-- - total customers in tier
+-- - customers with at least one purchase in the most recent 30 days
+-- - customers with zero purchases in the most recent 30 days
+-- Customers with no revenue in the 120-day period must still appear in the output
+-- under a separate tier label.
+-- Granularity: per value_tier.
+
+-- Expected output:
+-- - value_tier
+-- - total_customers
+-- - customers_active_last_30_days
+-- - customers_inactive_last_30_days
+
  
 
 -- My SQL:
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+the_time AS (
+    SELECT
+        DATE_TRUNC('day', max_date) AS max_day,
+        DATE_TRUNC('day', max_date) - INTERVAL '120 days' AS min_day,
+        DATE_TRUNC('day', max_date) - INTERVAL '30 days' AS last_30_days
+    FROM max_dates
+),
+base_customers AS (
+    SELECT
+        c.customer_id,
+        d.full_date,
+        COALESCE(SUM(f.net_amount), 0) AS total_amount
+    FROM dw.dim_customer c
+    LEFT JOIN dw.fact_sales f
+        ON c.customer_sk = f.customer_sk
+    LEFT JOIN dw.dim_date d
+        ON d.date_sk = f.date_sk
+    GROUP BY c.customer_id, d.full_date
+),
+amount_30_days AS (
+    SELECT
+        b.customer_id,
+        COALESCE(SUM(b.total_amount), 0) AS amount_last_30_days
+    FROM base_customers b
+    CROSS JOIN the_time t
+    WHERE b.full_date >= t.last_30_days
+      AND b.full_date < t.max_day
+    GROUP BY b.customer_id
+),
+amount_120_days AS (
+    SELECT
+        b.customer_id,
+        COALESCE(SUM(b.total_amount), 0) AS amount_last_120_days
+    FROM base_customers b
+    CROSS JOIN the_time t
+    WHERE b.full_date >= t.min_day
+      AND b.full_date < t.max_day
+    GROUP BY b.customer_id
+),
+tiers AS (
+    SELECT
+        COALESCE(a30.customer_id, a120.customer_id) AS customer_id,
+        COALESCE(a30.amount_last_30_days, 0) AS amount_last_30_days,
+        COALESCE(a120.amount_last_120_days, 0) AS amount_last_120_days,
+        CASE
+            WHEN COALESCE(a30.amount_last_30_days, 0) >= 1 THEN 'High tier'
+            WHEN COALESCE(a30.amount_last_30_days, 0) < 1 THEN 'Mid tier'
+            WHEN COALESCE(a120.amount_last_120_days, 0) = 0 THEN 'Low tier'
+        END AS tier
+    FROM amount_30_days a30
+    FULL JOIN amount_120_days a120
+        ON a30.customer_id = a120.customer_id
+)
+SELECT
+    tier,
+    COUNT(*) AS total_customers
+FROM tiers
+GROUP BY tier
+ORDER BY total_customers DESC;
+
+
+
+
+
 
 -- SQL Correction:
- 
+
+-- Score: Wrong
+-- You did not apply the required 120-day revenue percentile logic.
+-- The current classification (High/Mid/Low) is based on fixed thresholds,
+-- and it also uses the last 30 days to define the tier,
+-- while the tier should have been derived from the percentile ranking
+-- among customers with revenue in the last 120 days.
+--
+-- You did not safely include all customers in the final tier output.
+--
+-- Two required metrics are missing:
+-- customers_active_last_30_days
+-- customers_inactive_last_30_days
+--
+-- The CASE logic has an issue:
+-- the condition
+-- WHEN amount_last_30_days < 1 THEN 'Mid tier'
+-- also captures customers with 0 revenue in the last 120 days,
+-- so 'Low tier' is never reached as expected.
+
+
+ WITH max_dates AS (
+    SELECT MAX(full_date)::date AS max_date
+    FROM dw.dim_date
+),
+the_time AS (
+    SELECT
+        max_date AS max_day,
+        (max_date - INTERVAL '120 days')::date AS min_day_120,
+        (max_date - INTERVAL '30 days')::date AS min_day_30
+    FROM max_dates
+),
+revenue_120 AS (
+    SELECT
+        c.customer_id,
+        COALESCE(SUM(f.net_amount), 0) AS revenue_last_120_days
+    FROM dw.dim_customer c
+    LEFT JOIN dw.fact_sales f
+        ON c.customer_sk = f.customer_sk
+    LEFT JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN the_time t
+    WHERE d.full_date::date >= t.min_day_120
+      AND d.full_date::date <  t.max_day
+       OR d.full_date IS NULL
+    GROUP BY c.customer_id
+),
+revenue_120_ranked AS (
+    SELECT
+        customer_id,
+        revenue_last_120_days,
+        NTILE(4) OVER (
+            ORDER BY revenue_last_120_days DESC, customer_id
+        ) AS revenue_quartile
+    FROM revenue_120
+    WHERE revenue_last_120_days > 0
+),
+activity_30 AS (
+    SELECT
+        c.customer_id,
+        COALESCE(SUM(f.net_amount), 0) AS revenue_last_30_days
+    FROM dw.dim_customer c
+    LEFT JOIN dw.fact_sales f
+        ON c.customer_sk = f.customer_sk
+    LEFT JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN the_time t
+    WHERE d.full_date::date >= t.min_day_30
+      AND d.full_date::date <  t.max_day
+       OR d.full_date IS NULL
+    GROUP BY c.customer_id
+),
+customer_tiers AS (
+    SELECT
+        c.customer_id,
+        CASE
+            WHEN r.revenue_last_120_days = 0 THEN 'No revenue'
+            WHEN rr.revenue_quartile = 1 THEN 'Tier 1'
+            WHEN rr.revenue_quartile = 2 THEN 'Tier 2'
+            WHEN rr.revenue_quartile = 3 THEN 'Tier 3'
+            WHEN rr.revenue_quartile = 4 THEN 'Tier 4'
+        END AS value_tier,
+        CASE
+            WHEN COALESCE(a.revenue_last_30_days, 0) > 0 THEN 1
+            ELSE 0
+        END AS is_active_last_30_days
+    FROM dw.dim_customer c
+    LEFT JOIN revenue_120 r
+        ON c.customer_id = r.customer_id
+    LEFT JOIN revenue_120_ranked rr
+        ON c.customer_id = rr.customer_id
+    LEFT JOIN activity_30 a
+        ON c.customer_id = a.customer_id
+)
+SELECT
+    value_tier,
+    COUNT(*) AS total_customers,
+    COUNT(*) FILTER (WHERE is_active_last_30_days = 1) AS customers_active_last_30_days,
+    COUNT(*) FILTER (WHERE is_active_last_30_days = 0) AS customers_inactive_last_30_days
+FROM customer_tiers
+GROUP BY value_tier
+ORDER BY
+    CASE value_tier
+        WHEN 'Tier 1' THEN 1
+        WHEN 'Tier 2' THEN 2
+        WHEN 'Tier 3' THEN 3
+        WHEN 'Tier 4' THEN 4
+        ELSE 5
+    END;
 
 
 -- Request 22
