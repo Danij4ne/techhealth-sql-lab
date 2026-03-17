@@ -2256,12 +2256,128 @@ ORDER BY
 
 -- Request 22
 -- Question:
+
+-- Request 22/25 [INTERVIEW]
+-- Business question:
+-- Pricing analytics wants an exception report that highlights products
+-- whose discount behavior is unusual inside their own category.
+-- For the last 12 full calendar months (anchored to max warehouse date),
+-- return all products with:
+-- - product_identifier
+-- - product_category
+-- - total_revenue
+-- - weighted_avg_discount_rate
+-- - category_avg_discount_rate
+-- - discount_zscore_within_category
+-- - discount_percentile_within_category
+-- Include products with zero revenue in the period, and keep categories visible
+-- even when only one product has sales.
+-- Granularity: per product.
+
+-- Expected output:
+-- - product_identifier
+-- - product_category
+-- - total_revenue
+-- - weighted_avg_discount_rate
+-- - category_avg_discount_rate
+-- - discount_zscore_within_category
+-- - discount_percentile_within_category
  
 
 -- My SQL:
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+
+month_time AS (
+    SELECT
+        DATE_TRUNC('month', max_date)::date AS last_month,
+        (DATE_TRUNC('month', max_date) - INTERVAL '12 months')::date AS first_month
+    FROM max_dates
+),
+
+sales_in_period AS (
+    SELECT
+        f.product_sk,
+        f.net_amount,
+        f.discount
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_time m
+    WHERE d.full_date >= m.first_month
+      AND d.full_date < m.last_month
+),
+
+product_metrics AS (
+    SELECT
+        p.product_id AS product_identifier,
+        p.product_category,
+        COALESCE(SUM(s.net_amount), 0) AS total_revenue,
+        COALESCE(
+            SUM(s.discount * s.net_amount) / NULLIF(SUM(s.net_amount), 0),
+            0
+        ) AS weighted_avg_discount_rate
+    FROM dw.dim_product p
+    LEFT JOIN sales_in_period s
+        ON p.product_sk = s.product_sk
+    GROUP BY
+        p.product_id,
+        p.product_category
+),
+
+category_stats AS (
+    SELECT
+        product_category,
+        AVG(weighted_avg_discount_rate) AS category_avg_discount_rate,
+        STDDEV_SAMP(weighted_avg_discount_rate) AS category_stddev_discount_rate
+    FROM product_metrics
+    GROUP BY product_category
+),
+
+final AS (
+    SELECT
+        pm.product_identifier,
+        pm.product_category,
+        pm.total_revenue,
+        pm.weighted_avg_discount_rate,
+        cs.category_avg_discount_rate,
+        CASE
+            WHEN cs.category_stddev_discount_rate IS NULL
+              OR cs.category_stddev_discount_rate = 0
+            THEN 0
+            ELSE
+                (pm.weighted_avg_discount_rate - cs.category_avg_discount_rate)
+                / cs.category_stddev_discount_rate
+        END AS discount_zscore_within_category,
+        PERCENT_RANK() OVER (
+            PARTITION BY pm.product_category
+            ORDER BY pm.weighted_avg_discount_rate
+        ) AS discount_percentile_within_category
+    FROM product_metrics pm
+    LEFT JOIN category_stats cs
+        ON pm.product_category = cs.product_category
+)
+
+SELECT
+    product_identifier,
+    product_category,
+    total_revenue,
+    weighted_avg_discount_rate,
+    category_avg_discount_rate,
+    discount_zscore_within_category,
+    discount_percentile_within_category
+FROM final
+ORDER BY product_category, product_identifier;
+
+
+
 
 -- SQL Correction:
+
+--Score: Correct
  
 
 
