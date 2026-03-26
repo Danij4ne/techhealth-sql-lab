@@ -2379,18 +2379,141 @@ ORDER BY product_category, product_identifier;
 
 --Score: Correct
  
-
-
 -- Request 23
 -- Question:
+
+-- Request 23/25 [CORPORATE]
+-- Business question:
+-- Executive leadership wants a full exception-style market report that does not hide missing combinations.
+-- For the last 4 full calendar quarters (anchored to max warehouse date),
+-- return every combination of quarter and market, even when no sales occurred.
+-- For each combination, calculate:
+-- - total revenue
+-- - distinct customers
+-- - quarter_over_quarter_revenue_change
+-- - revenue_rank_within_quarter
+-- - trailing_4_quarter_revenue
+-- Granularity: per quarter, per market.
+
+-- Expected output:
+-- - reporting_quarter
+-- - market
+-- - total_revenue
+-- - distinct_customers
+-- - quarter_over_quarter_revenue_change
+-- - revenue_rank_within_quarter
+-- - trailing_4_quarter_revenue
+
+
  
 
 -- My SQL:
 
+WITH dates_max AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+
+the_quarters AS (
+    SELECT DATE_TRUNC('quarter', max_date) - INTERVAL '3 months' AS quarter_start
+    FROM dates_max
+    UNION ALL
+    SELECT DATE_TRUNC('quarter', max_date) - INTERVAL '6 months'
+    FROM dates_max
+    UNION ALL
+    SELECT DATE_TRUNC('quarter', max_date) - INTERVAL '9 months'
+    FROM dates_max
+    UNION ALL
+    SELECT DATE_TRUNC('quarter', max_date) - INTERVAL '12 months'
+    FROM dates_max
+),
+
+markets AS (
+    SELECT DISTINCT market
+    FROM dw.dim_region
+),
+
+quarter_market_grid AS (
+    SELECT
+        q.quarter_start,
+        m.market
+    FROM the_quarters q
+    CROSS JOIN markets m
+),
+
+sales_by_quarter_market AS (
+    SELECT
+        DATE_TRUNC('quarter', d.full_date)::date AS quarter_start,
+        r.market,
+        SUM(f.net_amount) AS total_revenue,
+        COUNT(DISTINCT f.customer_sk) AS distinct_customers
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    WHERE DATE_TRUNC('quarter', d.full_date)::date IN (
+        SELECT quarter_start
+        FROM the_quarters
+    )
+    GROUP BY
+        DATE_TRUNC('quarter', d.full_date)::date,
+        r.market
+),
+
+final_base AS (
+    SELECT
+        g.quarter_start AS reporting_quarter,
+        g.market,
+        COALESCE(s.total_revenue, 0) AS total_revenue,
+        COALESCE(s.distinct_customers, 0) AS distinct_customers
+    FROM quarter_market_grid g
+    LEFT JOIN sales_by_quarter_market s
+        ON g.quarter_start = s.quarter_start
+       AND g.market = s.market
+),
+
+final_metrics AS (
+    SELECT
+        reporting_quarter,
+        market,
+        total_revenue,
+        distinct_customers,
+        total_revenue
+          - LAG(total_revenue) OVER (
+                PARTITION BY market
+                ORDER BY reporting_quarter
+            ) AS quarter_over_quarter_revenue_change,
+        DENSE_RANK() OVER (
+            PARTITION BY reporting_quarter
+            ORDER BY total_revenue DESC
+        ) AS revenue_rank_within_quarter,
+        SUM(total_revenue) OVER (
+            PARTITION BY market
+            ORDER BY reporting_quarter
+            ROWS BETWEEN 3 PRECEDING AND CURRENT ROW
+        ) AS trailing_4_quarter_revenue
+    FROM final_base
+)
+
+SELECT
+    reporting_quarter,
+    market,
+    total_revenue,
+    distinct_customers,
+    quarter_over_quarter_revenue_change,
+    revenue_rank_within_quarter,
+    trailing_4_quarter_revenue
+FROM final_metrics
+ORDER BY
+    reporting_quarter,
+    market;
+
+
 
 -- SQL Correction:
  
-
+ --Score: Correct
 
 -- Request 24
 -- Question:
