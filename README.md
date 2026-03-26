@@ -90,18 +90,6 @@ They follow a sequential naming convention (e.g., session_001.sql, session_002.s
 
 ---
 
-### progress.csv
-
-Tracks performance metrics for every session using three outcome categories:
-
-- **correct**
-- **partial**
-- **wrong**
-
-Each row represents one completed session, providing a quantitative record of accuracy and consistency over time.
-
----
-
 ## Project Overview
 
 TechHealth SQL Lab combines three elements into a single analytical system:
