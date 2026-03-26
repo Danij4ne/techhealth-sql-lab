@@ -37,7 +37,8 @@ techhealth-sql-lab/
 │   └── techhealth_postgres.sql
 │
 ├── prompt/
-│   └── hybrid_sql_master_prompt.md
+│   ├── hybrid_sql_master_prompt.md
+│   └── sql_interview_prompt.md
 │
 ├── sessions/
 │   └── *.sql
@@ -67,10 +68,14 @@ These files represent the authoritative source of truth for the TechHealth data 
 
 ### prompt/
 
-Contains the full specification of the Hybrid SQL Master control system.
+Contains the prompt specifications used to run SQL practice sessions.
 
-This layer governs how business requests are generated, how SQL responses are evaluated, how difficulty progresses, and how performance is scored.
-It allows analytical sessions to be executed using either T-SQL or PostgreSQL syntax while operating on the same underlying data model.
+Prompt files currently included:
+
+- **hybrid_sql_master_prompt.md** — Hybrid practice mode that mixes corporate and interview-style requests, with scoring and progression across a 25-request session.
+- **sql_interview_prompt.md** — Interview-focused version designed for realistic SQL interview preparation with distribution by difficulty and explicit granularity/join evaluation.
+
+Both prompts are designed to work against the same TechHealth data model, enabling alternative session styles without changing the dataset.
 
 ---
 
