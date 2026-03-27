@@ -72,13 +72,85 @@ WHERE d.full_date >= m.start_month AND d.full_date < m.finish_month
 
 -- Request 2
 -- Question:
- 
+
+-- Request 2/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8 min
+-- Main skill tested: Grouping + ranking logic
+-- Business question:
+-- The commercial team wants to know which product categories are driving the business.
+-- For the last full calendar quarter, return the top 3 categories by total revenue.
+-- Expected output:
+-- - category_name
+-- - total_revenue
+-- - revenue_rank
+-- Granularity:
+-- - One row per category for the last full calendar quarter
 
 -- My SQL:
 
 
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+the_quarter AS(
+    SELECT
+    date_trunc('month',max_date) AS finish_quarter,
+    date_trunc('month',max_date) - INTERVAL '3 months' AS start_quarter
+    FROM maxs_date
+),
+top_categories AS(
+    SELECT p.product_category, SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+    ON d.date_sk = f.date_sk
+    CROSS JOIN the_quarter m
+    WHERE d.full_date >= m.start_quarter AND d.full_date < m.finish_quarter
+    GROUP BY p.product_category
+    ORDER BY total_revenue DESC
+),
+ranking AS(
+    SELECT product_category, total_revenue, 
+    ROW_NUMBER() OVER( ORDER BY total_revenue DESC) AS revenue_rank
+    FROM top_categories
+    ORDER BY revenue_rank ASC
+)
+SELECT product_category, total_revenue, revenue_rank
+FROM ranking
+ORDER BY revenue_rank ASC
+LIMIT 3
+
+
+
 -- SQL Correction:
- 
+
+-- Verdict: Correct
+-- Interview pass likelihood: Likely Pass
+
+-- What is good
+-- You anchored the calculation to the warehouse max date, correctly defined the last full calendar month, and filtered with an inclusive lower bound and exclusive upper bound. That is exactly the safe pattern interviewers like to see for calendar-month logic.
+
+-- What is missing or risky
+-- Almost nothing important. The only minor thing is naming: the business asked for total_revenue, but your final alias is total_amount_last_month. That is not wrong logically, just a small mismatch with the expected output name.
+
+-- Granularity correctness
+-- Correct. Single row for the whole business.
+
+-- Join correctness / duplication risk
+-- Correct. Joining fact_sales to dim_date on the date key is safe here, and there is no duplication risk from the way you wrote it.
+
+-- Would this pass in a real interview?
+-- Yes.
+
+-- Cleaner version only if needed
+-- Only the final alias could be renamed to total_revenue to match the requested output more closely.
+
+-- One short practical tip
+-- When the prompt gives expected column names, try to match them exactly.
 
 
 -- Request 3
