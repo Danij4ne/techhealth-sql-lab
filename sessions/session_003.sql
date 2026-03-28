@@ -155,12 +155,87 @@ LIMIT 3
 
 -- Request 3
 -- Question:
- 
+
+-- Request 3/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 9 min
+-- Main skill tested: MoM comparison
+-- Business question:
+-- The growth team wants a simple trend check.
+-- Compare revenue for the last full calendar month versus the month before that, and return both months plus the month-over-month revenue change.
+-- Expected output:
+-- - reporting_month
+-- - total_revenue
+-- - previous_month_revenue
+-- - revenue_change
+-- - revenue_change_pct
+-- Granularity:
+-- - One row per month for the last 2 full calendar months
+
 
 -- My SQL:
 
 
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_bounds AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS current_month_start,
+        DATE_TRUNC('month', max_date) - INTERVAL '2 month' AS start_2_months_ago
+    FROM maxs_date
+),
+revenue_moths AS(
+    SELECT DATE_TRUNC('month',d.full_date) AS reporting_month, SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+    ON d.date_sk = f.date_sk
+    CROSS JOIN month_bounds m
+    WHERE d.full_date >= m.start_2_months_ago AND d.full_date < m.current_month_start
+    GROUP BY DATE_TRUNC('month',d.full_date) 
+),
+lag_calculate as(
+    SELECT reporting_month, total_revenue, 
+    lag(total_revenue) OVER( ORDER BY reporting_month) AS previous_month_revenue
+    FROM revenue_moths
+)
+SELECT reporting_month, total_revenue, previous_month_revenue, 
+total_revenue - previous_month_revenue AS revenue_change,
+CASE
+    WHEN previous_month_revenue IS NULL OR previous_month_revenue = 0 THEN NULL
+    ELSE (total_revenue - previous_month_revenue) * 1.0 / previous_month_revenue
+END AS revenue_change_pct
+FROM lag_calculate
+
+
 -- SQL Correction:
+
+-- Verdict: Correct
+-- Interview pass likelihood: Likely Pass
+
+-- What is good
+-- You defined the last 2 full calendar months correctly, aggregated revenue at month level, and used a lag to compare each month against the previous one. Your percentage change handling is also safe because you protected against null and zero previous revenue.
+
+-- What is missing or risky
+-- Only very small things:
+--
+-- revenue_moths looks like a typo in the CTE name, but it does not affect logic.
+-- If the interviewer wanted the percentage in percentage points format, they might expect multiplying by 100, but your current version is still a valid ratio unless they specify formatting.
+
+-- Granularity correctness
+-- Correct. One row per month for the last 2 full calendar months.
+
+-- Join correctness / duplication risk
+-- Correct. Safe join pattern, no duplication issue.
+
+-- Would this pass in a real interview?
+-- Yes.
+
+-- One short practical tip
+-- For MoM questions, your pattern is strong: define exact month bounds first, then aggregate, then compare.
+
  
 
 
