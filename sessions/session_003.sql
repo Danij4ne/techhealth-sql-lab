@@ -241,11 +241,69 @@ FROM lag_calculate
 
 -- Request 4
 -- Question:
+
+-- Request 4/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8 min
+-- Main skill tested: COUNT DISTINCT + grouping
+-- Business question:
+-- The customer success team wants to know how broad adoption was recently.
+-- For the last full calendar month, return the number of distinct active customers by market.
+-- Expected output:
+-- - market
+-- - active_customers
+-- Granularity:
+-- - One row per market for the last full calendar month
+
  
 -- My SQL:
 
 
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+month_time AS(
+    SELECT
+        date_trunc('month', max_date) AS finish_month,
+        date_trunc('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM maxs_date
+)
+SELECT r.market , COUNT(DISTINCT f.customer_sk) AS active_customers 
+FROM dw.fact_sales f
+JOIN dw.dim_region r
+ON f.region_sk = r.region_sk
+JOIN dw.dim_date d
+ON f.date_sk = d.date_sk
+CROSS JOIN month_time m
+WHERE d.full_date >= m.start_month AND d.full_date < m.finish_month
+GROUP BY r.market
+ORDER BY active_customers DESC
+
+
 -- SQL Correction:
+
+-- Verdict: Correct
+-- Interview pass likelihood: Likely Pass
+
+-- What is good
+-- You used the sales fact table to define activity, filtered to the last full calendar month correctly, grouped by market, and counted distinct customers. That matches the business meaning of active customers well.
+
+-- What is missing or risky
+-- Very little. The only thing to watch is whether market truly belongs on dim_region in this schema, but assuming that dimension is correct, your logic is strong.
+
+-- Granularity correctness
+-- Correct. One row per market.
+
+-- Join correctness / duplication risk
+-- Correct. No duplication issue in the pattern you used.
+
+-- Would this pass in a real interview?
+-- Yes.
+
+-- One short practical tip
+-- For “active customers,” always first ask yourself what defines activity. In this case, sales activity makes the fact table choice correct.
  
 
 
