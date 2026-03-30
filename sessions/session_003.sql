@@ -309,12 +309,94 @@ ORDER BY active_customers DESC
 
 -- Request 5
 -- Question:
+
+-- Request 5/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8 min
+-- Main skill tested: First event logic
+-- Business question:
+-- The CRM team wants to understand new customer activation.
+-- For each market, count how many customers placed their first-ever order during the last full calendar quarter.
+-- Expected output:
+-- - market
+-- - new_active_customers
+-- Granularity:
+-- - One row per market
  
 
 -- My SQL:
+
+WITH maxs_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_time AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) AS finish_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '3 month' AS start_quarter
+    FROM maxs_date
+),
+first_purchase AS (
+    SELECT
+        f.customer_sk,
+        r.market,
+        d.full_date,
+        ROW_NUMBER() OVER (
+            PARTITION BY f.customer_sk
+            ORDER BY d.full_date
+        ) AS rn
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+)
+SELECT
+    fp.market,
+    MIN(fp.full_date) AS time_order,
+    COUNT(*) AS active_customers
+FROM first_purchase fp
+CROSS JOIN month_time m
+WHERE fp.rn = 1
+  AND fp.full_date >= m.start_quarter
+  AND fp.full_date < m.finish_quarter
+GROUP BY fp.market
+ORDER BY active_customers DESC;
  
 
 -- SQL Correction:
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good
+-- You correctly identified that this is a first-event problem, and you used a row-number pattern to isolate each customer’s first purchase. You also used quarter boundaries correctly this time.
+
+-- What is missing or risky
+-- Two main issues:
+-- The expected output was just market and new_active_customers, but your result also includes time_order.
+-- More importantly, your count is grouped by the market attached to the customer’s first sales row. That can be valid if the business wants the market of the first order itself, but it is worth noticing that this definition depends on the market on that first transaction.
+-- Also, the final alias is active_customers, while the requested output was new_active_customers.
+
+-- Granularity correctness
+-- Mostly correct, because you ended with one row per market.
+-- But including MIN(fp.full_date) AS time_order adds an unnecessary field that is not part of the requested grain.
+
+-- Join correctness / duplication risk
+-- Safe enough. No direct duplication problem in your current approach.
+
+-- Would this pass in a real interview?
+-- It might pass if the interviewer focuses on the main idea, but they would likely ask you to clean up the output and align it more tightly with the requirement.
+
+-- Cleaner version only if needed
+-- The cleaner version would return only:
+-- market
+-- COUNT(*) AS new_active_customers
+
+-- One short practical tip
+-- When you already isolated one row per customer, check the final select very strictly against the requested output and remove extra fields.
+
+
 
 
 -- Request 6
