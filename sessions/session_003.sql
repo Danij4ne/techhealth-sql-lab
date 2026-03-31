@@ -401,12 +401,103 @@ ORDER BY active_customers DESC;
 
 -- Request 6
 -- Question:
+
+-- Request 6/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 7 min
+-- Main skill tested: Top N + grouping
+-- Business question:
+-- The sales team wants to focus on high-value customers.
+-- For the last full calendar year, return the top 5 customers by total revenue.
+-- Expected output:
+-- - customer_id
+-- - customer_name
+-- - total_revenue
+-- - revenue_rank
+-- Granularity:
+-- - One row per customer for the last full calendar year
+
  
 
 -- My SQL:
- 
+
+
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+year_time AS(
+    SELECT
+        date_trunc('year', max_date) AS finish_year,
+        date_trunc('year', max_date) - INTERVAL '1 years' AS start_year
+    FROM maxs_date
+),
+customers_revenues AS(
+    SELECT c.customer_sk , c.customer_id, SUM(f.net_amount) AS total_revenue
+    FROM dw.dim_customer c
+    JOIN dw.fact_sales f
+    ON c.customer_sk = f.customer_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN year_time y
+    WHERE d.full_date >= y.start_year AND d.full_date < y.finish_year
+    GROUP BY c.customer_sk , c.customer_id
+)
+SELECT customer_sk, customer_id, total_revenue,
+ROW_NUMBER() OVER(ORDER BY total_revenue DESC) AS rk
+FROM customers_revenues
+ORDER BY rk ASC
+LIMIT 5
+
 
 -- SQL Correction:
+
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good
+-- You used the sales fact table correctly, defined the last full calendar year with proper boundaries, aggregated revenue at customer level, and ranked customers by revenue. The main logic is strong.
+
+-- What is missing or risky
+-- The requested output was:
+
+-- customer_id
+-- customer_name
+-- total_revenue
+-- revenue_rank
+
+-- But your query returns:
+
+-- customer_sk
+-- customer_id
+-- total_revenue
+-- rk
+
+-- So the biggest issue is that you did not return customer_name, and you included the surrogate key instead, which is usually not the business-facing field an interviewer wants.
+
+-- Also, the rank alias should match the requested output more closely.
+
+-- Granularity correctness
+-- Correct. One row per customer.
+
+-- Join correctness / duplication risk
+-- Correct. No duplication risk in this join pattern.
+
+-- Would this pass in a real interview?
+-- It shows good reasoning, but many interviewers would mark it partial because the final output does not match the business request closely enough.
+
+-- Cleaner version only if needed
+-- The main cleanup is:
+
+-- include customer_name
+-- remove customer_sk
+-- rename the rank field to revenue_rank
+
+-- One short practical tip
+-- At the end of every interview query, compare your final select line by line against the expected output.
 
 
 
