@@ -503,12 +503,135 @@ LIMIT 5
 
 -- Request 7
 -- Question:
+
+-- Request 7/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8 min
+-- Main skill tested: Exception reporting
+-- Business question:
+-- The product team wants to identify inactive catalog areas.
+-- Return all product categories that had no sales at all during the last full calendar month.
+-- Expected output:
+-- - category_name
+-- Granularity:
+-- - One row per category with no sales in the last full calendar month
+
  
 
 -- My SQL:
- 
+
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+month_time AS(
+    SELECT
+        date_trunc('month', max_date) AS finish_month,
+        date_trunc('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM maxs_date
+),
+customers_revenues AS(
+    SELECT DISTINCT p.product_category AS category_name 
+    FROM dw.dim_product p
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM (
+            SELECT f.product_sk
+            FROM dw.fact_sales f
+            JOIN dw.dim_date d
+            ON f.date_sk = d.date_sk
+            CROSS JOIN month_time m
+            WHERE d.full_date >= m.start_month AND d.full_date < m.finish_month
+        ) f
+        WHERE p.product_sk = f.product_sk
+    )
+
+) 
+SELECT category_name
+FROM customers_revenues
+
 
 -- SQL Correction:
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good
+-- You understood that this is an exception-reporting problem
+-- and you correctly started from the product dimension,
+-- which is the right side to preserve when looking for categories with no sales.
+
+-- What is missing or risky
+-- The main issue is that the business asked for product categories with no sales,
+-- but your NOT EXISTS is checking at the product_sk level,
+-- while your final output is at the product_category level.
+
+-- That creates a logic mismatch:
+-- your query returns categories that contain at least one unsold product
+-- but the request wants categories where the entire category had no sales at all
+
+-- So if one product in a category sold and another did not,
+-- your query would still return that category, which would be incorrect.
+
+-- Also, the CTE name customers_revenues does not match the business meaning,
+-- though that is only a naming issue.
+
+-- Granularity correctness
+-- Final output is one row per category,
+-- but the filtering logic is not aligned with that grain.
+-- This is the key issue.
+
+-- Join correctness / duplication risk
+-- No duplication issue,
+-- but there is a grain mismatch between the exclusion logic
+-- and the requested output.
+
+-- Would this pass in a real interview?
+-- Probably not as written,
+-- because this is exactly the kind of question where interviewers
+-- want to see correct grain thinking.
+
+-- Cleaner version only if needed
+-- The main fix is to test absence of sales at the category level,
+-- not at the product key level.
+
+-- One short practical tip
+-- For “no activity” questions,
+-- make sure the anti-join or NOT EXISTS is written
+-- at the same grain as the requested output.
+
+
+
+WITH maxs_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_time AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM maxs_date
+),
+categories_with_sales AS (
+    SELECT DISTINCT p.product_category AS category_name
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_time m
+    WHERE d.full_date >= m.start_month
+      AND d.full_date < m.finish_month
+)
+SELECT DISTINCT p.product_category AS category_name
+FROM dw.dim_product p
+LEFT JOIN categories_with_sales c
+    ON p.product_category = c.category_name
+WHERE c.category_name IS NULL
+ORDER BY category_name;
+
 
 
 
