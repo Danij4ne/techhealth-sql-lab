@@ -633,19 +633,65 @@ WHERE c.category_name IS NULL
 ORDER BY category_name;
 
 
-
-
-
 -- Request 8
 -- Question:
- 
+
+
+-- Request 8/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 9 min
+-- Main skill tested: Share of total
+-- Business question:
+-- Leadership wants to understand concentration.
+-- For the last full calendar month, show each market’s revenue and its share of total company revenue for that month.
+-- Expected output:
+-- - market
+-- - total_revenue
+-- - revenue_share_pct
+-- Granularity:
+-- - One row per market for the last full calendar month
+
 
 -- My SQL:
- 
+
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+month_time AS(
+    SELECT
+        date_trunc('month', max_date) AS finish_month,
+        date_trunc('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM maxs_date
+),
+market_value AS(
+    SELECT r.market, SUM(f.net_amount) AS total_revenue , 
+    ( SELECT SUM(f.net_amount) 
+        FROM dw.fact_sales f 
+        JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+        CROSS JOIN month_time m
+        WHERE d.full_date >= m.start_month AND d.full_date < m.finish_month
+        ) total
+    FROM dw.dim_region r
+    JOIN dw.fact_sales f
+    ON r.region_sk = f.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN month_time m
+    WHERE d.full_date >= m.start_month AND d.full_date < m.finish_month
+    GROUP BY r.market
+) 
+SELECT market, total_revenue,
+ROUND((total_revenue / total) * 100 ,2) AS revenue_share_pct
+FROM market_value
+ORDER BY revenue_share_pct DESC
 
 -- SQL Correction:
 
-
+-- Correct
 
 -- Request 9
 -- Question:
