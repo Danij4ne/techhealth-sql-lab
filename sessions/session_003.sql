@@ -695,12 +695,85 @@ ORDER BY revenue_share_pct DESC
 
 -- Request 9
 -- Question:
+
+-- Request 9/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8 min
+-- Main skill tested: Customers with no activity
+-- Business question:
+-- The retention team wants to identify drop-off.
+-- Return all customers who had at least one order in the previous full calendar month, but no orders in the last full calendar month.
+-- Expected output:
+-- - customer_id
+-- - customer_name
+-- Granularity:
+-- - One row per customer
  
 
 -- My SQL:
 
 
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+month_time AS(
+    SELECT
+        date_trunc('month', max_date) AS finish_month,
+        date_trunc('month', max_date) - INTERVAL '1 month' AS start_month,
+        date_trunc('month', max_date) - INTERVAL '2 month' AS start_month_previous
+    FROM maxs_date
+),
+customer_previous AS(
+    SELECT c.customer_sk , c.customer_id 
+    FROM dw.dim_customer c
+    JOIN dw.fact_sales f
+    ON c.customer_sk = f.customer_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN month_time m
+    WHERE d.full_date >= m.start_month_previous AND  d.full_date < m.start_month
+)
+    SELECT  c.customer_id 
+    FROM customer_previous c
+    WHERE  NOT EXISTS (
+        SELECT 1 
+        FROM dw.fact_sales f
+        JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+        CROSS JOIN month_time m
+        WHERE f.customer_sk = c.customer_sk AND d.full_date >= m.start_month AND  d.full_date < m.finish_month
+    )
+
+
+
+
 -- SQL Correction:
+
+-- The logic is correct: first identify customers active in the previous month
+-- and then exclude those who were active in the last month using NOT EXISTS
+
+-- The month boundaries are correctly defined
+
+-- The issue is about granularity:
+-- when joining with fact_sales, a customer can appear multiple times
+-- if they have multiple purchases in that period
+
+-- Even if customer_id is unique in the dimension,
+-- it can be repeated in the JOIN result
+
+-- This causes duplicate rows in the final output
+-- (more than one row per customer), which breaks the required grain
+
+-- Solution:
+-- add DISTINCT (or GROUP BY) in the CTE to guarantee
+-- one single row per customer before applying NOT EXISTS
+
+-- Conclusion:
+-- the logic is correct, but deduplication was missing
+-- to ensure one row per customer in the final result
  
 
 
