@@ -779,13 +779,108 @@ customer_previous AS(
 
 -- Request 10
 -- Question:
+
+-- Request 10/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8 min
+-- Main skill tested: Last-event logic
+-- Business question:
+-- The operations team wants to review recent purchasing behavior.
+-- For each customer, return their most recent order date and the revenue of that order.
+-- Expected output:
+-- - customer_id
+-- - last_order_date
+-- - last_order_revenue
+-- Granularity:
+-- - One row per customer
  
 
 -- My SQL:
 
+WITH customers_stacks AS(
+    SELECT c.customer_id , f.net_amount AS last_order_revenue , MAX(d.full_date) AS last_order_date 
+    FROM dw.dim_customer c
+    JOIN dw.fact_sales f
+    ON c.customer_sk = f.customer_sk    
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    GROUP BY c.customer_id , f.net_amount
+    ORDER BY c.customer_id ASC
+),
+rank_time AS (
+    SELECT customer_id, last_order_revenue , last_order_date,
+    ROW_NUMBER() OVER(PARTITION BY customer_id ORDER BY last_order_date DESC) AS rank_time
+    FROM customers_stacks
+) 
+SELECT customer_id, last_order_revenue , last_order_date
+    FROM rank_time
+    WHERE rank_time = 1
+    ORDER BY customer_id ASC
 
 -- SQL Correction:
- 
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good
+-- You understood that this is a last-event problem and that you need one final row per customer.
+-- Using a ranking step to keep the latest row per customer is the right overall direction.
+
+-- What is missing or risky
+-- The main issue is in the first CTE:
+
+-- GROUP BY c.customer_id, f.net_amount
+
+-- That changes the grain to one row per customer and revenue value, not one row per order.
+-- Then MAX(d.full_date) is taken inside each of those groups, which can disconnect the date from the actual latest order row you want.
+
+-- So the query can return the wrong last_order_revenue, because the revenue is not guaranteed to belong to the customer’s true latest order date.
+
+-- Also, ORDER BY inside the first CTE is unnecessary here.
+
+-- Granularity correctness
+-- Final output is one row per customer, but the intermediate grain is not safely defined for the business question.
+
+-- Join correctness / duplication risk
+-- No major duplication problem from the joins themselves.
+-- The risk is a grain mismatch: grouping by revenue before identifying the latest order can produce incorrect pairings between last_order_date and last_order_revenue.
+
+-- Would this pass in a real interview?
+-- Usually not fully. Interviewers often care a lot about whether the revenue really comes from the latest order row.
+
+-- Cleaner version only if needed
+-- A cleaner and safer version is to rank the actual sales rows first, then keep the latest one per customer:
+
+WITH ranked_orders AS (
+    SELECT
+        c.customer_id,
+        d.full_date AS last_order_date,
+        f.net_amount AS last_order_revenue,
+        ROW_NUMBER() OVER (
+            PARTITION BY c.customer_id
+            ORDER BY d.full_date DESC
+        ) AS rn
+    FROM dw.fact_sales f
+    JOIN dw.dim_customer c
+        ON f.customer_sk = c.customer_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+)
+SELECT
+    customer_id,
+    last_order_date,
+    last_order_revenue
+FROM ranked_orders
+WHERE rn = 1
+ORDER BY customer_id;
+
+-- If the schema has a true order identifier and multiple rows can exist on the same date for the same customer,
+-- then the best interview version would use that order identifier as an extra tie-breaker in the ranking.
+
+-- One short practical tip
+-- For first/last event questions, rank the original event rows first.
+-- Do not aggregate before you have identified the exact row you want.
+
 
 
 -- Request 11
