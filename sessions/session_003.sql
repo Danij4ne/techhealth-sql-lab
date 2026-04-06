@@ -885,12 +885,80 @@ ORDER BY customer_id;
 
 -- Request 11
 -- Question:
- 
+
+
+-- Request 11/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 10 min
+-- Main skill tested: Rolling metric
+-- Business question:
+-- The finance team wants a smoother trend view.
+-- For each month in the last 6 full calendar months, return total revenue and the 3-month rolling average of monthly revenue.
+-- Expected output:
+-- - reporting_month
+-- - total_revenue
+-- - rolling_3_month_avg_revenue
+-- Granularity:
+-- - One row per month for the last 6 full calendar months
+
+
 
 -- My SQL:
 
 
+
+
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+month_time AS(
+    SELECT
+        date_trunc('month', max_date) AS finish_six_month,
+        date_trunc('month', max_date) - INTERVAL '6 month' AS start_six_month 
+    FROM maxs_date
+),
+reporting_months AS(
+    SELECT DATE_TRUNC('month', d.full_date) AS reporting_month , SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN month_time o
+    WHERE d.full_date >= o.start_six_month AND d.full_date < o.finish_six_month
+    GROUP BY DATE_TRUNC('month', d.full_date)
+
+)
+SELECT reporting_month, total_revenue ,
+    AVG(total_revenue) OVER( ORDER BY reporting_month  ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS rolling_3_month_avg_revenue
+    FROM reporting_months
+    ORDER BY reporting_month
+
+
 -- SQL Correction:
+
+
+-- Verdict: Correct
+-- Interview pass likelihood: Likely Pass
+--
+-- What is good
+-- You defined the last 6 full calendar months correctly, aggregated revenue at the month level first, and then calculated the rolling 3-month average over those monthly totals. That is exactly the right sequence for this kind of question.
+--
+-- What is missing or risky
+-- Very little. The main thing to be aware of is that this returns only months that exist in the sales data. If the business wanted all 6 calendar months even when one had no sales, you would need to generate the full set of months first and then left join revenue into it. But for a standard interview version, your answer is good.
+--
+-- Granularity correctness
+-- Correct. One row per month.
+--
+-- Join correctness / duplication risk
+-- Correct. You aggregated before applying the rolling calculation, so there is no duplication problem.
+--
+-- Would this pass in a real interview?
+-- Yes.
+--
+-- One short practical tip
+-- For rolling metrics, always aggregate to the reporting grain first, then apply the window calculation.
  
 
 
