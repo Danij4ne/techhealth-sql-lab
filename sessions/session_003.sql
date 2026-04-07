@@ -964,12 +964,148 @@ SELECT reporting_month, total_revenue ,
 
 -- Request 12
 -- Question:
+
+
+-- Request 12/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 10 min
+-- Main skill tested: Share of category within market
+-- Business question:
+-- The commercial team wants to understand mix within each market.
+-- For the last full calendar quarter, return each category’s revenue and its share of total market revenue within the same market.
+-- Expected output:
+-- - market
+-- - category_name
+-- - total_revenue
+-- - market_revenue_share_pct
+-- Granularity:
+-- - One row per market and category for the last full calendar quarter
  
 
 -- My SQL:
 
 
+
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+quarter_time AS(
+    SELECT
+        date_trunc('quarter', max_date) AS finish_quarter,
+        date_trunc('quarter', max_date) - INTERVAL '3 month' AS start_quarter
+    FROM maxs_date
+),
+market_money AS(
+    SELECT r.market , p.product_category AS category_name , SUM(f.net_amount) AS total_revenue 
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter AND d.full_date < q.finish_quarter
+    GROUP BY r.market , p.product_category 
+) ,
+market_total_value AS(
+    SELECT r.market , SUM(f.net_amount) AS total_revenue_market
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter AND d.full_date < q.finish_quarter
+    GROUP BY r.market
+) 
+SELECT m.market , m.category_name , m.total_revenue ,
+ROUND(( m.total_revenue / t.total_revenue_market) * 100 ,2 ) AS market_revenue_share_pct
+FROM market_money m
+JOIN market_total_value t
+ON m.market = t.market
+ORDER BY m.market , m.category_name
+
+
+
+
 -- SQL Correction:
+
+-- Verdict: Correct
+-- Interview pass likelihood: Likely Pass
+
+-- What is good
+-- You defined the last full calendar quarter correctly, aggregated revenue at the required grain of market and category, then separately calculated total market revenue and used it to compute each category’s share within that market. That matches the business question very well.
+
+-- What is missing or risky
+-- Very little. The logic is solid. The only minor point is efficiency/readability: since both CTEs scan the same filtered sales data, a cleaner interview version could first build one filtered base set and then aggregate from it. But your current version is fully valid.
+
+-- Granularity correctness
+-- Correct. One row per market and category for the last full calendar quarter.
+
+-- Join correctness / duplication risk
+-- Correct. You aggregated before joining market-category totals to market totals, so there is no duplication risk here.
+
+-- Would this pass in a real interview?
+-- Yes.
+
+-- Cleaner version only if needed
+-- Your version is already good. A slightly cleaner version could be:
+
+WITH maxs_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_time AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) AS finish_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '3 month' AS start_quarter
+    FROM maxs_date
+),
+base_sales AS (
+    SELECT
+        r.market,
+        p.product_category AS category_name,
+        f.net_amount
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter
+      AND d.full_date < q.finish_quarter
+),
+market_category_revenue AS (
+    SELECT
+        market,
+        category_name,
+        SUM(net_amount) AS total_revenue
+    FROM base_sales
+    GROUP BY market, category_name
+),
+market_revenue AS (
+    SELECT
+        market,
+        SUM(net_amount) AS total_market_revenue
+    FROM base_sales
+    GROUP BY market
+)
+SELECT
+    mc.market,
+    mc.category_name,
+    mc.total_revenue,
+    ROUND(100.0 * mc.total_revenue / mr.total_market_revenue, 2) AS market_revenue_share_pct
+FROM market_category_revenue mc
+JOIN market_revenue mr
+    ON mc.market = mr.market
+ORDER BY mc.market, mc.category_name;
+
  
 
 
