@@ -1111,13 +1111,167 @@ ORDER BY mc.market, mc.category_name;
 
 -- Request 13
 -- Question:
+
+-- Request 13/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 11 min
+-- Main skill tested: QoQ comparison
+-- Business question:
+-- The executive team wants a quarterly performance comparison.
+-- For each market, compare revenue in the last full calendar quarter versus the previous full calendar quarter, and return the change.
+-- Expected output:
+-- - market
+-- - last_full_quarter_revenue
+-- - previous_full_quarter_revenue
+-- - revenue_change
+-- - revenue_change_pct
+-- Granularity:
+-- - One row per market
  
 
 -- My SQL:
 
 
+
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+quarter_time AS(
+    SELECT
+        date_trunc('quarter', max_date) AS finish_quarter,
+        date_trunc('quarter', max_date) - INTERVAL '3 month' AS start_quarter,
+        date_trunc('quarter', max_date) - INTERVAL '6 month' AS start_previous_quarter
+    FROM maxs_date
+),
+market_money AS(
+    SELECT r.market , SUM(f.net_amount) AS last_full_quarter_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter AND d.full_date < q.finish_quarter
+    GROUP BY r.market 
+) ,
+previous_market_money AS(
+    SELECT r.market , SUM(f.net_amount) AS previous_full_quarter_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_previous_quarter AND d.full_date < q.start_quarter
+    GROUP BY r.market
+) 
+SELECT m.market , m.last_full_quarter_revenue , p.previous_full_quarter_revenue ,
+ROUND(( p.previous_full_quarter_revenue - m.last_full_quarter_revenue ),2 ) AS revenue_change ,
+ROUND((( p.previous_full_quarter_revenue - m.last_full_quarter_revenue) / m.last_full_quarter_revenue ) * 100 ,2 ) AS revenue_change_pct
+FROM market_money m
+JOIN previous_market_money p
+ON m.market = p.market
+ORDER BY m.market 
+
+
+
+
 -- SQL Correction:
- 
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good
+-- You defined the quarter boundaries correctly, calculated revenue separately for the last full quarter and the previous full quarter, and returned one row per market. The overall structure is strong and interview-reasonable.
+
+-- What is missing or risky
+-- The main issue is the change formula.
+
+-- You wrote:
+-- p.previous_full_quarter_revenue - m.last_full_quarter_revenue
+
+-- That reverses the usual business definition of change.
+-- Normally, for a comparison like this, the expected logic is:
+
+-- revenue_change = last_full_quarter_revenue - previous_full_quarter_revenue
+-- revenue_change_pct = (last_full_quarter_revenue - previous_full_quarter_revenue) / previous_full_quarter_revenue
+
+-- So your current query gives the sign backwards, and the percentage denominator is also based on the wrong side.
+
+-- Also, using an inner join means you only keep markets that exist in both quarters. In many interview settings that is acceptable, but a more complete version would preserve markets even if they existed in only one of the two quarters.
+
+-- Granularity correctness
+-- Correct. One row per market.
+
+-- Join correctness / duplication risk
+-- Good. You aggregated before joining, so there is no duplication risk.
+
+-- Would this pass in a real interview?
+-- It shows good structure, but many interviewers would mark it partial because the final business metric is directionally wrong.
+
+-- Cleaner version only if needed
+-- Here is a cleaner corrected version:
+
+WITH maxs_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_time AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) AS finish_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '3 month' AS start_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '6 month' AS start_previous_quarter
+    FROM maxs_date
+),
+last_quarter_revenue AS (
+    SELECT
+        r.market,
+        SUM(f.net_amount) AS last_full_quarter_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter
+      AND d.full_date < q.finish_quarter
+    GROUP BY r.market
+),
+previous_quarter_revenue AS (
+    SELECT
+        r.market,
+        SUM(f.net_amount) AS previous_full_quarter_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_previous_quarter
+      AND d.full_date < q.start_quarter
+    GROUP BY r.market
+)
+SELECT
+    l.market,
+    l.last_full_quarter_revenue,
+    p.previous_full_quarter_revenue,
+    l.last_full_quarter_revenue - p.previous_full_quarter_revenue AS revenue_change,
+    CASE
+        WHEN p.previous_full_quarter_revenue IS NULL
+          OR p.previous_full_quarter_revenue = 0 THEN NULL
+        ELSE ROUND(
+            100.0 * (l.last_full_quarter_revenue - p.previous_full_quarter_revenue)
+            / p.previous_full_quarter_revenue,
+            2
+        )
+    END AS revenue_change_pct
+FROM last_quarter_revenue l
+JOIN previous_quarter_revenue p
+    ON l.market = p.market
+ORDER BY l.market;
 
 
 -- Request 14
