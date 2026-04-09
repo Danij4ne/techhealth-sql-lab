@@ -1276,13 +1276,142 @@ ORDER BY l.market;
 
 -- Request 14
 -- Question:
+
+-- Request 14/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 10 min
+-- Main skill tested: Ranking within group
+-- Business question:
+-- The regional directors want to see category leaders in each market.
+-- For the last full calendar year, return the top 2 categories by revenue within each market.
+-- Expected output:
+-- - market
+-- - category_name
+-- - total_revenue
+-- - category_rank_in_market
+-- Granularity:
+-- - One row per market and category among the top 2 per market
  
 
 -- My SQL:
 
 
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+year_time AS(
+    SELECT
+        date_trunc('year', max_date) AS finish_year,
+        date_trunc('year', max_date) - INTERVAL '1 year' AS start_year
+    FROM maxs_date
+),
+markets_revenue AS(
+    SELECT r.market , p.product_category AS category_name , SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN year_time y
+    WHERE d.full_date >= y.start_year AND d.full_date <= y.finish_year
+    GROUP BY r.market , p.product_category
+
+),
+ranking_markets AS(
+    SELECT market, category_name, total_revenue, 
+    ROW_NUMBER() OVER( PARTITION BY market ORDER BY total_revenue DESC) AS category_rank_in_market
+    FROM markets_revenue
+    ORDER BY market
+)
+SELECT market, category_name, total_revenue,category_rank_in_market
+FROM ranking_markets
+WHERE category_rank_in_market = 1 OR category_rank_in_market = 2
+
+
 -- SQL Correction:
- 
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good
+-- You used the correct fact table, grouped at the required grain of market and category, and ranked categories within each market. The overall structure is strong and realistic for an interview.
+
+-- What is missing or risky
+-- The main issue is the date filter:
+-- WHERE d.full_date >= y.start_year AND d.full_date <= y.finish_year
+-- If finish_year is the first day of the current year, using <= can include that boundary date, which would leak one day from the current year into the result. For “last full calendar year,” the safe pattern is:
+-- d.full_date >= start_year AND d.full_date < finish_year
+
+-- Also, this line is unnecessary:
+-- ORDER BY market
+-- inside the ranking_markets CTE.
+
+-- Your final filter works, but this is cleaner:
+-- WHERE category_rank_in_market <= 2
+
+-- Granularity correctness
+-- Correct. One row per market and category among the top 2 per market.
+
+-- Join correctness / duplication risk
+-- Correct. No duplication risk here because you aggregated before ranking.
+
+-- Would this pass in a real interview?
+-- It could pass with some interviewers, but the boundary condition is important enough that many would mark it partial.
+
+-- Cleaner version only if needed
+-- Here is the corrected cleaner version:
+
+WITH maxs_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+year_time AS (
+    SELECT
+        DATE_TRUNC('year', max_date) AS finish_year,
+        DATE_TRUNC('year', max_date) - INTERVAL '1 year' AS start_year
+    FROM maxs_date
+),
+market_category_revenue AS (
+    SELECT
+        r.market,
+        p.product_category AS category_name,
+        SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN year_time y
+    WHERE d.full_date >= y.start_year
+      AND d.full_date < y.finish_year
+    GROUP BY r.market, p.product_category
+),
+ranked_categories AS (
+    SELECT
+        market,
+        category_name,
+        total_revenue,
+        ROW_NUMBER() OVER (
+            PARTITION BY market
+            ORDER BY total_revenue DESC
+        ) AS category_rank_in_market
+    FROM market_category_revenue
+)
+SELECT
+    market,
+    category_name,
+    total_revenue,
+    category_rank_in_market
+FROM ranked_categories
+WHERE category_rank_in_market <= 2
+ORDER BY market, category_rank_in_market;
+
 
 
 -- Request 15
