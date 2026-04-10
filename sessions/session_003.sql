@@ -1417,11 +1417,146 @@ ORDER BY market, category_rank_in_market;
 -- Request 15
 -- Question:
  
+-- Request 15/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 11 min
+-- Main skill tested: Multi-step aggregation
+-- Business question:
+-- The finance team wants to compare order quality across markets.
+-- For the last full calendar quarter, return each market’s:
+-- - total orders
+-- - total revenue
+-- - average revenue per order
+-- Expected output:
+-- - market
+-- - total_orders
+-- - total_revenue
+-- - avg_revenue_per_order
+-- Granularity:
+-- - One row per market
+
 
 -- My SQL:
 
 
+
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+quarter_time AS(
+    SELECT
+        date_trunc('quarter', max_date) AS finish_quarter,
+        date_trunc('quarter', max_date) - INTERVAL '3 months' AS start_quarter
+    FROM maxs_date
+),
+markets_revenue AS(
+    SELECT r.market , COUNT(f.sale_id) AS total_orders , SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time y
+    WHERE d.full_date >= y.start_quarter AND d.full_date < y.finish_quarter
+    GROUP BY r.market 
+
+),
+ranking_markets AS(
+    SELECT market, total_orders, total_revenue, 
+    ROUND(total_revenue / NULLIF(total_orders,0),2) AS avg_revenue_per_order
+    FROM markets_revenue
+    ORDER BY market
+)
+SELECT market, total_orders, total_revenue, avg_revenue_per_order
+FROM ranking_markets
+ORDER BY market
+
+
 -- SQL Correction:
+
+-- Verdict
+-- Correct
+-- Interview pass likelihood: Likely Pass
+
+
+-- What is good
+-- You used the correct fact table
+-- You filtered the last full calendar quarter correctly
+-- You grouped at the market level
+-- You returned all three requested business metrics:
+
+-- total orders
+-- total revenue
+-- average revenue per order
+
+-- Your average calculation is also safe because you protected against division by zero.
+
+
+-- What is missing or risky
+-- Very little
+
+-- The only small point:
+-- The second CTE name ranking_markets is not really doing any ranking
+-- This is a naming mismatch rather than a logic problem
+
+-- Also:
+-- ORDER BY market inside that CTE is unnecessary
+
+
+-- Granularity correctness
+-- Correct
+-- One row per market
+
+
+-- Join correctness / duplication risk
+-- Correct
+-- No duplication risk here
+
+
+-- Would this pass in a real interview?
+-- Yes
+
+
+-- Cleaner version only if needed
+-- Your query is already valid
+-- A slightly cleaner version would be:
+
+
+WITH maxs_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_time AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) AS finish_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '3 months' AS start_quarter
+    FROM maxs_date
+),
+market_metrics AS (
+    SELECT
+        r.market,
+        COUNT(f.sale_id) AS total_orders,
+        SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter
+      AND d.full_date < q.finish_quarter
+    GROUP BY r.market
+)
+SELECT
+    market,
+    total_orders,
+    total_revenue,
+    ROUND(total_revenue / NULLIF(total_orders, 0), 2) AS avg_revenue_per_order
+FROM market_metrics
+ORDER BY market;
  
 
 
