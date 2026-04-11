@@ -1562,15 +1562,129 @@ ORDER BY market;
 
 -- Request 16
 -- Question:
+
+-- Request 16/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 10 min
+-- Main skill tested: Unusual pattern detection
+-- Business question:
+-- The strategy team wants to spot concentration risk.
+-- For the last full calendar year, identify markets where a single category generated more than 50% of total market revenue.
+-- Expected output:
+-- - market
+-- - category_name
+-- - category_revenue
+-- - market_revenue
+-- - category_share_pct
+-- Granularity:
+-- - One row per market and category meeting the condition
  
 
 -- My SQL:
 
 
+
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+quarter_time AS(
+    SELECT
+        date_trunc('year', max_date) AS finish_year,
+        date_trunc('year', max_date) - INTERVAL '1 year' AS start_year
+    FROM maxs_date
+),
+category_revenues AS(
+    SELECT r.market , p.product_category AS category_name , SUM(f.net_amount) AS category_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time y
+    WHERE d.full_date >= y.start_year AND d.full_date < y.finish_year
+    GROUP BY r.market, p.product_category 
+),
+markets_revenue AS(
+    SELECT market, category_name, category_revenue ,
+    SUM(category_revenue) OVER(PARTITION BY market) AS market_revenue
+    FROM category_revenues
+),
+identify_markets AS (
+    SELECT market , category_name , category_revenue, market_revenue ,
+    ROUND((category_revenue / NULLIF(market_revenue,0) ) * 100,2) AS category_share_pct
+    FROM markets_revenue
+)
+SELECT market, category_name, category_revenue, market_revenue, category_share_pct
+FROM identify_markets
+WHERE category_share_pct >50
+ORDER BY market 
+
+
 -- SQL Correction:
+
+-- VERDICT
+-- Result: Correct
+-- Interview pass likelihood: Likely Pass
+
+-- WHAT IS GOOD
+-- Correct time filtering:
+-- Last full calendar year is properly defined
+
+-- Correct aggregation strategy:
+-- Category revenue aggregated at (market, category) level
+
+-- Proper use of window function:
+-- Total market revenue derived using window aggregation
+
+-- Business logic:
+-- Correct computation of category share within each market
+
+-- Overall:
+-- Efficient and well-structured solution
+-- Suitable for concentration-risk type questions
+
+
+-- WHAT IS MISSING OR RISKY
+-- Naming issue:
+-- CTE "quarter_time" is misleading
+-- It actually represents YEAR boundaries
+
+-- Suggested improvement:
+-- Rename to "year_time" for clarity
+
+-- Impact:
+-- No effect on logic
+-- Only affects readability
+
+
+-- GRANULARITY CORRECTNESS
+-- Output grain:
+-- One row per (market, category)
+
+-- Condition:
+-- Only rows meeting the business requirement are returned
+
+
+-- JOIN CORRECTNESS / DUPLICATION RISK
+-- Safe aggregation order:
+-- First aggregate at (market, category)
+-- Then derive total market revenue
+
+-- Result:
+-- No duplication risk
+-- Clean and controlled joins
+
+
+-- FINAL INTERVIEW VERDICT
+-- Would this pass in a real interview?
+-- Yes
+
  
-
-
 -- Request 17
 -- Question:
  
