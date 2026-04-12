@@ -1687,13 +1687,114 @@ ORDER BY market
  
 -- Request 17
 -- Question:
+
+
+-- Request 17/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 11 min
+-- Main skill tested: First purchase by category
+-- Business question:
+-- The product team wants to understand acquisition behavior.
+-- For each customer, return the category of their first-ever purchased product and the date of that first purchase.
+-- Expected output:
+-- - customer_id
+-- - first_purchase_date
+-- - first_category_name
+-- Granularity:
+-- - One row per customer
  
 -- My SQL:
 
 
--- SQL Correction:
- 
 
+WITH customers_pr AS (
+    SELECT c.customer_id , MIN(d.full_date) AS first_purchase_date , p.product_category AS category_name  
+    FROM dw.fact_sales f
+    JOIN dw.dim_customer c
+    ON f.customer_sk = c.customer_sk
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    GROUP BY c.customer_id , p.product_category 
+),
+ranks_time AS(
+    SELECT customer_id , first_purchase_date , category_name ,
+    ROW_NUMBER() OVER(PARTITION BY customer_id ORDER BY first_purchase_date ) AS rt
+    FROM customers_pr
+)
+SELECT customer_id , first_purchase_date , category_name 
+FROM ranks_time
+WHERE rt = 1
+ORDER BY customer_id 
+
+
+
+-- SQL Correction:
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good
+-- You understood that the final output must be one row per customer, and you tried to identify the earliest category/date combination per customer.
+-- The overall direction is reasonable.
+
+-- What is missing or risky
+-- The main issue is that you aggregated too early at this grain:
+
+-- GROUP BY c.customer_id, p.product_category
+
+-- That gives you the first date per customer and category, not the first actual purchase row for the customer.
+
+-- Then you rank those category-level minimum dates and keep one row.
+-- That often works, but it is not fully safe because:
+
+-- you are no longer selecting the exact original first purchase row
+-- if multiple categories were bought on the same first date, the result is not deterministic
+-- the selected category is not guaranteed to reflect a clean tie-break rule
+
+-- Also, the expected output asked for first_category_name, but your final column is still named category_name.
+
+-- Granularity correctness
+-- Final output is one row per customer, which is good.
+-- But the intermediate grain is not the true event grain needed for a first-purchase question.
+
+-- Join correctness / duplication risk
+-- No join duplication problem, but there is an event-grain problem.
+-- For first/last event questions, it is safer to rank the original sales rows first, then keep the first row.
+
+-- Would this pass in a real interview?
+-- It might get partial credit, but many interviewers would want a more precise first-event solution.
+
+-- Cleaner version only if needed
+-- A safer version is:
+
+WITH ranked_purchases AS (
+    SELECT
+        c.customer_id,
+        d.full_date AS first_purchase_date,
+        p.product_category AS first_category_name,
+        ROW_NUMBER() OVER (
+            PARTITION BY c.customer_id
+            ORDER BY d.full_date ASC
+        ) AS rn
+    FROM dw.fact_sales f
+    JOIN dw.dim_customer c
+        ON f.customer_sk = c.customer_sk
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+)
+SELECT
+    customer_id,
+    first_purchase_date,
+    first_category_name
+FROM ranked_purchases
+WHERE rn = 1
+ORDER BY customer_id;
+
+ 
 
 -- Request 18
 -- Question:
