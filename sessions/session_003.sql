@@ -1798,13 +1798,68 @@ ORDER BY customer_id;
 
 -- Request 18
 -- Question:
+
+-- Request 18/25 [GRANULARITY]
+-- Type: Granularity
+-- Estimated solve time: 12 min
+-- Main skill tested: Aggregating before joining fact-related logic
+-- Business question:
+-- The leadership team wants to compare customer reach and revenue by market for the last full calendar quarter.
+-- Return, for each market:
+-- - total revenue
+-- - distinct active customers
+-- - average revenue per active customer
+-- Expected output:
+-- - market
+-- - total_revenue
+-- - active_customers
+-- - avg_revenue_per_active_customer
+-- Granularity:
+-- - One row per market
  
 
 -- My SQL:
 
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+quarter_time AS(
+    SELECT
+        date_trunc('quarter', max_date) AS finish_quarter,
+        date_trunc('quarter', max_date) - INTERVAL '3 months' AS start_quarter
+    FROM maxs_date
+),
+market_revenues AS(
+    SELECT r.market , COUNT(DISTINCT c.customer_id) AS active_customers , SUM(f.net_amount) AS market_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_customer c
+    ON f.customer_sk = c.customer_sk
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time y
+    WHERE d.full_date >= y.start_quarter AND d.full_date < y.finish_quarter
+    GROUP BY r.market 
+),
+revenue_customer AS(
+    SELECT market, active_customers, market_revenue ,
+    ROUND(market_revenue / NULLIF(active_customers,0),2) AS avg_revenue_per_active_customer
+    FROM market_revenues
+)
+    SELECT market , active_customers , market_revenue, avg_revenue_per_active_customer 
+    FROM revenue_customer
+    ORDER BY avg_revenue_per_active_customer DESC
 
 -- SQL Correction:
- 
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
+
 
 
 -- Request 19
