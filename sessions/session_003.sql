@@ -1864,16 +1864,93 @@ revenue_customer AS(
 
 -- Request 19
 -- Question:
+
+-- Request 19/25 [GRANULARITY]
+-- Type: Granularity
+-- Estimated solve time: 12 min
+-- Main skill tested: Preserving missing combinations
+-- Business question:
+-- The category management team wants full market coverage.
+-- For the last full calendar month, return every combination of:
+-- - market
+-- - category
+-- including combinations with zero revenue, and show the revenue for each combination.
+-- Expected output:
+-- - market
+-- - category_name
+-- - total_revenue
+-- Granularity:
+-- - One row per market-category combination for the last full calendar month, including zero-revenue combinations
  
 
 -- My SQL:
 
+WITH maxs_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_time AS (
+    SELECT
+        date_trunc('month', max_date) AS finish_month,
+        date_trunc('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM maxs_date
+),
+markets AS (
+    SELECT DISTINCT market
+    FROM dw.dim_region
+),
+categories AS (
+    SELECT DISTINCT product_category AS category_name
+    FROM dw.dim_product
+),
+all_combinations AS (
+    SELECT
+        m.market,
+        c.category_name
+    FROM markets m
+    CROSS JOIN categories c
+),
+monthly_revenue AS (
+    SELECT
+        r.market,
+        p.product_category AS category_name,
+        SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON r.region_sk = f.region_sk
+    JOIN dw.dim_product p
+        ON p.product_sk = f.product_sk
+    JOIN dw.dim_date d
+        ON d.date_sk = f.date_sk
+    CROSS JOIN month_time mt
+    WHERE d.full_date >= mt.start_month
+      AND d.full_date < mt.finish_month
+    GROUP BY
+        r.market,
+        p.product_category
+)
+SELECT
+    ac.market,
+    ac.category_name,
+    COALESCE(mr.total_revenue, 0) AS total_revenue
+FROM all_combinations ac
+LEFT JOIN monthly_revenue mr
+    ON ac.market = mr.market
+   AND ac.category_name = mr.category_name
+ORDER BY
+    ac.market,
+    ac.category_name;
+
  
 -- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 
 -- Request 20
 -- Question:
+
  
 
 -- My SQL:
