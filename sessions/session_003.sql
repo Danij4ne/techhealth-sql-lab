@@ -1951,17 +1951,85 @@ ORDER BY
 -- Request 20
 -- Question:
 
- 
+-- Request 20/25 [GRANULARITY]
+-- Type: Granularity
+-- Estimated solve time: 12 min
+-- Main skill tested: Correct output grain and anti-join logic
+-- Business question:
+-- The merchandising team wants to identify underperforming areas.
+-- Return all market-category combinations that had no sales at all in the last full calendar quarter.
+-- Expected output:
+-- - market
+-- - category_name
+-- Granularity:
+-- - One row per market-category combination with no sales in the last full calendar quarter
 
+ 
 -- My SQL:
+
+
+
+ WITH maxs_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_time AS (
+    SELECT
+        date_trunc('quarter', max_date) AS finish_quarter,
+        date_trunc('quarter', max_date) - INTERVAL '3 months' AS start_quarter
+    FROM maxs_date
+),
+markets AS (
+    SELECT DISTINCT market
+    FROM dw.dim_region
+),
+categories AS (
+    SELECT DISTINCT product_category AS category_name
+    FROM dw.dim_product
+),
+all_market_category AS (
+    SELECT
+        m.market,
+        c.category_name
+    FROM markets m
+    CROSS JOIN categories c
+),
+sold_market_category_last_quarter AS (
+    SELECT DISTINCT
+        r.market,
+        p.product_category AS category_name ,
+        f.net_amount
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter
+      AND d.full_date < q.finish_quarter
+)
+SELECT
+    amc.market,
+    amc.category_name
+FROM all_market_category amc
+LEFT JOIN sold_market_category_last_quarter s
+    ON amc.market = s.market
+   AND amc.category_name = s.category_name
+WHERE s.market IS NULL
+ORDER BY amc.market, amc.category_name;
 
 
 -- SQL Correction:
  
-
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 -- Request 21
 -- Question:
+
+
  
 
 -- My SQL:
