@@ -2029,15 +2029,61 @@ ORDER BY amc.market, amc.category_name;
 -- Request 21
 -- Question:
 
+-- Request 21/25 [GRANULARITY]
+-- Type: Granularity
+-- Estimated solve time: 12 min
+-- Main skill tested: Aggregate before joining to preserve correct grain
+-- Business question:
+-- The finance team wants a market summary with category breadth.
+-- For the last full calendar year, return for each market:
+-- - total revenue
+-- - number of distinct categories sold
+-- Expected output:
+-- - market
+-- - total_revenue
+-- - distinct_categories_sold
+-- Granularity:
+-- - One row per market
 
- 
 
 -- My SQL:
 
 
--- SQL Correction:
- 
 
+
+WITH maxs_date AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+    
+),
+year_time AS(
+    SELECT
+        date_trunc('year', max_date) AS finish_year,
+        date_trunc('year', max_date) - INTERVAL '1 year' AS start_year
+    FROM maxs_date
+),
+market_revenues AS(
+    SELECT r.market , SUM(f.net_amount) AS total_revenue ,  COUNT(DISTINCT p.product_category) AS distinct_categories_sold
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN year_time y
+    WHERE d.full_date >= y.start_year AND d.full_date < y.finish_year
+    GROUP BY r.market 
+)
+SELECT market , total_revenue , distinct_categories_sold
+FROM market_revenues
+ORDER BY total_revenue DESC 
+
+-- SQL Correction:
+
+-- Verdict: Correct
+--Interview pass likelihood: Likely Pass
+ 
 
 -- Request 22
 -- Question:
