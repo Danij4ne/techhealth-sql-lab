@@ -2087,14 +2087,56 @@ ORDER BY total_revenue DESC
 
 -- Request 22
 -- Question:
+
+-- Request 22/25 [GRANULARITY]
+-- Type: Granularity
+-- Estimated solve time: 12 min
+-- Main skill tested: Avoiding unsafe joins and defining correct output grain
+-- Business question:
+-- The commercial team wants to know, for the last full calendar quarter, which markets had more distinct active customers than distinct products sold.
+-- Expected output:
+-- - market
+-- - active_customers
+-- - distinct_products_sold
+-- Granularity:
+-- - One row per market meeting the condition
  
 
 -- My SQL:
 
 
--- SQL Correction:
- 
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_time AS(
+    SELECT 
+    DATE_TRUNC('quarter',max_date) AS finish_quarter,
+    DATE_TRUNC('quarter',max_date) - INTERVAL '3 months' AS start_quarter 
+    FROM max_dates
+),
+markets AS(
+    SELECT r.market , COUNT(DISTINCT f.customer_sk ) AS active_customers , COUNT(DISTINCT f.product_sk) AS distinct_products_sold
+    FROM dw.fact_sales f  
+    JOIN dw.dim_region r  
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d  
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter AND d.full_date < q.finish_quarter 
+    GROUP BY r.market 
+    HAVING COUNT(DISTINCT f.customer_sk ) > COUNT(DISTINCT f.product_sk)
+    
+) 
+SELECT market , active_customers , distinct_products_sold
+FROM markets
+ORDER BY active_customers DESC
 
+-- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
+ 
 
 -- Request 23
 -- Question:
