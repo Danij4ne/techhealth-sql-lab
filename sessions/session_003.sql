@@ -2140,14 +2140,81 @@ ORDER BY active_customers DESC
 
 -- Request 23
 -- Question:
+
+-- Request 23/25 [HIGH]
+-- Type: High-level
+-- Estimated solve time: 14 min
+-- Main skill tested: Multi-step cohort-style comparison
+-- Business question:
+-- The retention team wants to understand customer continuity.
+-- Among customers who were active in the previous full calendar quarter, for each market return:
+-- - how many were also active in the last full calendar quarter
+-- - the retention rate
+-- Use the market from the previous full calendar quarter as the reporting market.
+-- Expected output:
+-- - market
+-- - previously_active_customers
+-- - retained_customers
+-- - retention_rate_pct
+-- Granularity:
+-- - One row per market based on the customer’s market in the previous full calendar quarter
  
 
 -- My SQL:
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_time AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) AS finish_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '3 months' AS start_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '6 months' AS previous_quarter
+    FROM max_dates
+),
+market_previous AS (
+    SELECT DISTINCT
+        r.market,
+        f.customer_sk
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.previous_quarter
+      AND d.full_date < q.start_quarter
+),
+market_last AS (
+    SELECT DISTINCT
+        f.customer_sk
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter
+      AND d.full_date < q.finish_quarter
+)
+SELECT
+    p.market,
+    COUNT(DISTINCT p.customer_sk) AS previously_active_customers,
+    COUNT(DISTINCT l.customer_sk) AS retained_customers,
+    ROUND(
+        100.0 * COUNT(DISTINCT l.customer_sk) / NULLIF(COUNT(DISTINCT p.customer_sk), 0),
+        2
+    ) AS retention_rate_pct
+FROM market_previous p
+LEFT JOIN market_last l
+    ON p.customer_sk = l.customer_sk
+GROUP BY p.market
+ORDER BY retention_rate_pct DESC, p.market;
 
 -- SQL Correction:
- 
 
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
+ 
 
 -- Request 24
 -- Question:
