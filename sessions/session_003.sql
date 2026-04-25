@@ -2218,14 +2218,101 @@ ORDER BY retention_rate_pct DESC, p.market;
 
 -- Request 24
 -- Question:
+
+-- Request 24/25 [HIGH]
+-- Type: High-level
+-- Estimated solve time: 15 min
+-- Main skill tested: Multi-step cross-domain comparison
+-- Business question:
+-- The executive team wants to understand customer value concentration.
+-- For the last full calendar year, return, for each market:
+-- - total revenue
+-- - number of active customers
+-- - revenue from the top 10% highest-revenue customers in that market
+-- - share of market revenue coming from that top 10% customer group
+-- Expected output:
+-- - market
+-- - total_revenue
+-- - active_customers
+-- - top_10pct_customer_revenue
+-- - top_10pct_revenue_share_pct
+-- Granularity:
+-- - One row per market
  
 
 -- My SQL:
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+year_time AS (
+    SELECT
+        DATE_TRUNC('year', max_date) AS finish_year,
+        DATE_TRUNC('year', max_date) - INTERVAL '1 year' AS start_year
+    FROM max_dates
+),
+customer_market_revenue AS (
+    SELECT
+        r.market,
+        f.customer_sk,
+        SUM(f.net_amount) AS customer_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN year_time y
+    WHERE d.full_date >= y.start_year
+      AND d.full_date < y.finish_year
+    GROUP BY r.market, f.customer_sk
+),
+market_totals AS (
+    SELECT
+        market,
+        SUM(customer_revenue) AS total_revenue,
+        COUNT(*) AS active_customers
+    FROM customer_market_revenue
+    GROUP BY market
+),
+ranked_customers AS (
+    SELECT
+        market,
+        customer_sk,
+        customer_revenue,
+        NTILE(10) OVER (
+            PARTITION BY market
+            ORDER BY customer_revenue DESC
+        ) AS revenue_decile
+    FROM customer_market_revenue
+),
+top10_revenue AS (
+    SELECT
+        market,
+        SUM(customer_revenue) AS top_10pct_customer_revenue
+    FROM ranked_customers
+    WHERE revenue_decile = 1
+    GROUP BY market
+)
+SELECT
+    m.market,
+    m.total_revenue,
+    m.active_customers,
+    t.top_10pct_customer_revenue,
+    ROUND(
+        t.top_10pct_customer_revenue * 100.0 / NULLIF(m.total_revenue, 0),
+        2
+    ) AS top_10pct_revenue_share_pct
+FROM market_totals m
+JOIN top10_revenue t
+    ON m.market = t.market
+ORDER BY m.market;
+
 
 -- SQL Correction:
  
-
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 -- Request 25
 -- Question:
