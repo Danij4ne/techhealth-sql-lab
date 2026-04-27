@@ -1,5 +1,5 @@
 
--- Session 001
+-- Session 003
 
 -- Request 1
 -- Question:
@@ -2316,10 +2316,149 @@ ORDER BY m.market;
 
 -- Request 25
 -- Question:
+
+-- Request 25/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12 min
+-- Main skill tested: Year-over-year comparison
+-- Business question:
+-- The finance team wants to compare annual performance.
+-- For each market, compare revenue in the last full calendar year versus the year before that, and return the change.
+-- Expected output:
+-- - market
+-- - last_full_year_revenue
+-- - previous_full_year_revenue
+-- - revenue_change
+-- - revenue_change_pct
+-- Granularity:
+-- - One row per market
  
 
 -- My SQL:
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+year_time AS (
+    SELECT
+        DATE_TRUNC('year', max_date) AS finish_year,
+        DATE_TRUNC('year', max_date) - INTERVAL '1 year' AS start_year,
+        DATE_TRUNC('year', max_date) - INTERVAL '2 year' AS previous_year
+    FROM max_dates
+),
+market_previous_revenue AS (
+    SELECT
+        r.market,
+        SUM(f.net_amount) AS previous_full_year_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN year_time y
+    WHERE d.full_date >= y.previous_year
+      AND d.full_date < y.start_year
+    GROUP BY r.market
+),
+market_last_revenue AS(
+    SELECT
+        r.market,
+        SUM(f.net_amount) AS last_full_year_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN year_time y
+    WHERE d.full_date >= y.start_year
+      AND d.full_date < y.finish_year
+    GROUP BY r.market
+
+)
+
+    SELECT p.market , p.previous_full_year_revenue , l.last_full_year_revenue,
+    ROUND(l.last_full_year_revenue - p.previous_full_year_revenue ,2) AS revenue_change ,
+    ROUND((l.last_full_year_revenue - p.previous_full_year_revenue) / NULLIF(p.previous_full_year_revenue,0),2 * 100) AS revenue_change_pct
+    FROM market_previous_revenue p
+    JOIN market_last_revenue l
+    ON p.market = l.market
+    ORDER BY p.market
+
+
 
 -- SQL Correction:
- 
+
+-- VERDICT
+-- Result: Partial
+-- Interview pass likelihood: Borderline
+
+-- WHAT IS GOOD
+-- - Correct year boundaries (DATE_TRUNC + intervals)
+-- - Aggregation done separately for each year
+-- - Join at market level is correct
+-- - revenue_change calculated in correct direction:
+--   last_full_year_revenue - previous_full_year_revenue
+
+-- WHAT IS MISSING / RISKY
+
+-- 1. Percentage calculation error
+
+-- Incorrect:
+-- ROUND(
+--     (l.last_full_year_revenue - p.previous_full_year_revenue)
+--     / NULLIF(p.previous_full_year_revenue, 0),
+--     2 * 100
+-- )
+
+-- Problem:
+-- - 2 * 100 is treated as number of decimals
+-- - The result is not multiplied by 100
+
+-- Correct:
+-- ROUND(
+--     100.0 * (
+--         (l.last_full_year_revenue - p.previous_full_year_revenue)
+--         / NULLIF(p.previous_full_year_revenue, 0)
+--     ),
+--     2
+-- )
+
+-- 2. Column order issue
+
+-- Your order:
+-- previous_full_year_revenue,
+-- last_full_year_revenue
+
+-- Expected order:
+-- last_full_year_revenue,
+-- previous_full_year_revenue
+
+-- KEY RULE
+-- revenue_change     = current - previous
+-- revenue_change_pct = (current - previous) / previous * 100
+
+-- CLEAN VERSION
+
+SELECT
+    l.market,
+    l.last_full_year_revenue,
+    p.previous_full_year_revenue,
+
+    ROUND(
+        l.last_full_year_revenue - p.previous_full_year_revenue,
+        2
+    ) AS revenue_change,
+
+    ROUND(
+        100.0 * (
+            (l.last_full_year_revenue - p.previous_full_year_revenue)
+            / NULLIF(p.previous_full_year_revenue, 0)
+        ),
+        2
+    ) AS revenue_change_pct
+
+FROM market_last_revenue l
+JOIN market_previous_revenue p
+    ON l.market = p.market
+ORDER BY l.market;
