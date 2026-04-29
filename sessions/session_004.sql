@@ -91,12 +91,82 @@ ORDER BY p.market, pct_of_market_revenue DESC;
 
 -- Request 2
 -- Question:
+
+-- Request 2/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10–12 min
+-- Main skill tested: Month-over-month comparison + pct change
+--
+-- Business question:
+-- For each market, compare total revenue in the last full month against the previous full month. Show the absolute revenue change and the percentage change.
+--
+-- Expected output:
+-- - market
+-- - last_full_month_revenue
+-- - previous_full_month_revenue
+-- - revenue_change
+-- - pct_revenue_change
+--
+-- Granularity:
+-- One row per market
+
  
 
 -- My SQL:
 
 
+WITH maxs_date AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_time AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS current_month_start,
+        DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS last_full_month_start,
+        DATE_TRUNC('month', max_date) - INTERVAL '2 months' AS previous_full_month_start
+    FROM maxs_date
+),
+market_month_revenue AS (
+    SELECT
+        r.market,
+        DATE_TRUNC('month', d.full_date) AS month_start,
+        SUM(f.net_amount) AS revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_time mt
+    WHERE d.full_date >= mt.previous_full_month_start
+      AND d.full_date < mt.current_month_start
+    GROUP BY
+        r.market,
+        DATE_TRUNC('month', d.full_date)
+)
+SELECT
+    market,
+    SUM(CASE WHEN month_start = mt.last_full_month_start THEN revenue ELSE 0 END) AS last_full_month_revenue,
+    SUM(CASE WHEN month_start = mt.previous_full_month_start THEN revenue ELSE 0 END) AS previous_full_month_revenue,
+    SUM(CASE WHEN month_start = mt.last_full_month_start THEN revenue ELSE 0 END)
+        - SUM(CASE WHEN month_start = mt.previous_full_month_start THEN revenue ELSE 0 END) AS revenue_change,
+    ROUND(
+        (
+            SUM(CASE WHEN month_start = mt.last_full_month_start THEN revenue ELSE 0 END)
+            - SUM(CASE WHEN month_start = mt.previous_full_month_start THEN revenue ELSE 0 END)
+        ) * 100.0
+        / NULLIF(SUM(CASE WHEN month_start = mt.previous_full_month_start THEN revenue ELSE 0 END), 0),
+        2
+    ) AS pct_revenue_change
+FROM market_month_revenue
+CROSS JOIN month_time mt
+GROUP BY market
+ORDER BY market;
+
+
 -- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
  
 
 
