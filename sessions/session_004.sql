@@ -169,16 +169,158 @@ ORDER BY market;
 --Interview pass likelihood: Likely Pass
  
 
-
 -- Request 3
 -- Question:
- 
+
+-- Request 3/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10–12 min
+-- Main skill tested: Ranking + window functions + pct of market revenue
+--
+-- Business question:
+-- For the last full quarter, find the top 3 products by revenue within each market. Also show each product’s percentage contribution to that market’s total revenue for the quarter.
+--
+-- Expected output:
+-- - market
+-- - product_name
+-- - product_revenue
+-- - market_total_revenue
+-- - pct_of_market_revenue
+-- - product_rank
+--
+-- Granularity:
+-- One row per market + product, only top 3 products per market.
+
 
 -- My SQL:
 
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_dates AS(
+    SELECT 
+    DATE_TRUNC('month', max_date) AS finish_quarter,
+    DATE_TRUNC('month', max_date) - INTERVAL '3 months' AS start_quarter
+    FROM max_dates
+) ,
+market_product_revenue AS (
+    SELECT  r.market , p.product_name , SUM(f.net_amount) AS product_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_dates q
+    WHERE d.full_date >= q.start_quarter AND d.full_date < q.finish_quarter
+    GROUP BY r.market , p.product_name
+) ,
+market_total AS(
+    SELECT market , SUM(product_revenue) AS market_total_revenue
+    FROM market_product_revenue
+    GROUP BY market
+) ,
+pct_market AS(
+    SELECT r.market , r.product_name , r.product_revenue , t.market_total_revenue,
+    ROUND(r.product_revenue * 100 / NULLIF(t.market_total_revenue ,0),2) AS pct_of_market_revenue
+    FROM market_product_revenue r
+    JOIN market_total t
+    ON r.market = t.market
+) ,
+Ranking AS (
+SELECT market , product_name , product_revenue , market_total_revenue , pct_of_market_revenue ,
+ROW_NUMBER() OVER(PARTITION BY market ORDER BY pct_of_market_revenue DESC) AS product_rank
+FROM pct_market
+)
+SELECT market , product_name , product_revenue , market_total_revenue , pct_of_market_revenue , product_rank
+FROM Ranking
+WHERE product_rank = 1 OR  product_rank = 2  OR product_rank = 3 
 
 -- SQL Correction:
- 
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline / Likely Pass if you explain the quarter issue
+
+-- What is good:
+-- Correct joins.
+-- Correct output grain: market + product.
+-- Correct ranking idea.
+-- No duplication risk.
+-- Correct top 3 filter.
+
+-- What is missing or risky:
+
+-- Main issue:
+-- your “quarter” logic is actually last 3 full months, not last full quarter.
+-- DATE_TRUNC('month', max_date) should be DATE_TRUNC('quarter', max_date).
+
+-- Division:
+-- Use 100.0, not 100, to avoid integer division risk.
+
+-- Improvement:
+-- You could use SUM(product_revenue) OVER (PARTITION BY market)
+-- instead of joining market_total.
+
+-- Practical tip:
+-- last full quarter = DATE_TRUNC('quarter', max_date) - interval '3 months'
+--  to DATE_TRUNC('quarter', max_date)
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_dates AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) AS finish_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '3 months' AS start_quarter
+    FROM max_dates
+),
+market_product_revenue AS (
+    SELECT
+        r.market,
+        p.product_name,
+        SUM(f.net_amount) AS product_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_dates q
+    WHERE d.full_date >= q.start_quarter
+      AND d.full_date < q.finish_quarter
+    GROUP BY r.market, p.product_name
+),
+ranked AS (
+    SELECT
+        market,
+        product_name,
+        product_revenue,
+        SUM(product_revenue) OVER (PARTITION BY market) AS market_total_revenue,
+        ROUND(
+            product_revenue * 100.0
+            / NULLIF(SUM(product_revenue) OVER (PARTITION BY market), 0),
+            2
+        ) AS pct_of_market_revenue,
+        ROW_NUMBER() OVER (
+            PARTITION BY market
+            ORDER BY product_revenue DESC
+        ) AS product_rank
+    FROM market_product_revenue
+)
+SELECT
+    market,
+    product_name,
+    product_revenue,
+    market_total_revenue,
+    pct_of_market_revenue,
+    product_rank
+FROM ranked
+WHERE product_rank <= 3
+ORDER BY market, product_rank;
 
 
 -- Request 4
