@@ -325,14 +325,89 @@ ORDER BY market, product_rank;
 
 -- Request 4
 -- Question:
+
+-- Request 4/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10–12 min
+-- Main skill tested: Window functions + month-over-month pct change
+--
+-- Business question:
+-- For each market, show monthly revenue for the last 6 full months and compare each month against the previous month. Include the absolute revenue change and percentage revenue change.
+--
+-- Expected output:
+-- - market
+-- - month_start
+-- - monthly_revenue
+-- - previous_month_revenue
+-- - revenue_change
+-- - pct_revenue_change
+--
+-- Granularity:
+-- One row per market + month
  
 -- My SQL:
 
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_dates AS (
+    SELECT 
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '6 months' AS start_month
+    FROM max_dates
+),
+market_month AS (
+    SELECT 
+        r.market,
+        DATE_TRUNC('month', d.full_date) AS month_start,
+        SUM(f.net_amount) AS monthly_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_dates md
+    WHERE d.full_date >= md.start_month
+      AND d.full_date < md.finish_month
+    GROUP BY 
+        r.market,
+        DATE_TRUNC('month', d.full_date)
+),
+with_previous AS (
+    SELECT
+        market,
+        month_start,
+        monthly_revenue,
+        LAG(monthly_revenue) OVER (
+            PARTITION BY market
+            ORDER BY month_start
+        ) AS previous_month_revenue
+    FROM market_month
+)
+SELECT
+    market,
+    month_start,
+    monthly_revenue,
+    previous_month_revenue,
+    monthly_revenue - previous_month_revenue AS revenue_change,
+    ROUND(
+        (monthly_revenue - previous_month_revenue) * 100.0 
+        / NULLIF(previous_month_revenue, 0),
+        2
+    ) AS pct_revenue_change
+FROM with_previous
+ORDER BY market, month_start;
+
+
 -- SQL Correction:
+
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
+
  
-
-
 -- Request 5
 -- Question:
  
