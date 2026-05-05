@@ -410,12 +410,159 @@ ORDER BY market, month_start;
  
 -- Request 5
 -- Question:
+-- Request 5/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10–12 min
+-- Main skill tested: Ranking + percentage difference vs leader
+--
+-- Business question:
+-- For the last full month, rank products by revenue within each market. Show each product’s revenue, the top product revenue in that market, and how far each product is below the market leader as a percentage.
+--
+-- Expected output:
+-- - market
+-- - product_name
+-- - product_revenue
+-- - market_leader_revenue
+-- - pct_below_market_leader
+-- - product_rank
+--
+-- Granularity:
+-- One row per market + product
  
 
 -- My SQL:
- 
+
+
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_dates AS (
+    SELECT 
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM max_dates
+),
+market_month AS (
+    SELECT 
+        r.market,
+        p.product_name ,
+        SUM(f.net_amount) AS product_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_dates md
+    WHERE d.full_date >= md.start_month
+      AND d.full_date < md.finish_month
+    GROUP BY 
+        r.market,
+        p.product_name
+),
+product_rank AS (
+    SELECT market , product_name, product_revenue,
+    ROW_NUMBER() OVER(PARTITION BY market  ORDER BY product_revenue DESC) AS product_rank
+    FROM market_month
+),
+leader_revenue AS (
+    SELECT 
+        market,
+        product_revenue AS market_leader_revenue
+    FROM product_rank
+    WHERE product_rank = 1
+)  
+SELECT p.market , p.product_name, p.product_revenue, 
+ROUND(
+        (l.market_leader_revenue - p.product_revenue) * 100.0 
+        / NULLIF(l.market_leader_revenue, 0),
+        2
+    ) AS pct_below_market_leader, l.market_leader_revenue , p.product_rank
+FROM product_rank p
+JOIN leader_revenue l
+ON p.market= l.market
+
+
 
 -- SQL Correction:
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline / Likely Pass
+--
+-- What is good:
+--
+-- Correct last full month range.
+-- Correct ranking logic.
+-- Correct formula for % below leader.
+-- Correct grain: market + product.
+-- No duplication risk.
+--
+-- What is missing or risky:
+--
+-- Output order does not match the expected output: market_leader_revenue should come before pct_below_market_leader.
+-- You could get the leader revenue more cleanly with MAX(...) OVER.
+-- Add ORDER BY market, product_rank.
+--
+-- Cleaner version:
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_dates AS (
+    SELECT 
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM max_dates
+),
+market_product AS (
+    SELECT 
+        r.market,
+        p.product_name,
+        SUM(f.net_amount) AS product_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_dates md
+    WHERE d.full_date >= md.start_month
+      AND d.full_date < md.finish_month
+    GROUP BY r.market, p.product_name
+),
+ranked AS (
+    SELECT
+        market,
+        product_name,
+        product_revenue,
+        MAX(product_revenue) OVER (
+            PARTITION BY market
+        ) AS market_leader_revenue,
+        ROW_NUMBER() OVER (
+            PARTITION BY market
+            ORDER BY product_revenue DESC
+        ) AS product_rank
+    FROM market_product
+)
+SELECT
+    market,
+    product_name,
+    product_revenue,
+    market_leader_revenue,
+    ROUND(
+        (market_leader_revenue - product_revenue) * 100.0
+        / NULLIF(market_leader_revenue, 0),
+        2
+    ) AS pct_below_market_leader,
+    product_rank
+FROM ranked
+ORDER BY market, product_rank;
+
 
 
 -- Request 6
