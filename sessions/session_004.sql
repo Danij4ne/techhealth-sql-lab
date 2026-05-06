@@ -567,13 +567,72 @@ ORDER BY market, product_rank;
 
 -- Request 6
 -- Question:
+
+-- Request 6/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10–12 min
+-- Main skill tested: Rolling metrics + window functions
+--
+-- Business question:
+-- For each market, show monthly revenue for the last 6 full months and include a 3-month rolling average revenue.
+--
+-- Expected output:
+-- - market
+-- - month_start
+-- - monthly_revenue
+-- - rolling_3_month_avg_revenue
+--
+-- Granularity:
+-- One row per market + month
  
 
 -- My SQL:
- 
+
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_dates AS (
+    SELECT 
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '6 months' AS start_month
+    FROM max_dates
+),
+market_month AS(
+    SELECT r.market , DATE_TRUNC('month', d.full_date) AS month_start , SUM(f.net_amount) AS monthly_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk 
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN month_dates m
+    WHERE d.full_date >= m.start_month AND d.full_date < m.finish_month
+    GROUP BY r.market , DATE_TRUNC('month', d.full_date)
+) 
+SELECT market , month_start , monthly_revenue ,
+ROUND(AVG(monthly_revenue) OVER( PARTITION BY market ORDER BY month_start ROWS BETWEEN 2 PRECEDING AND CURRENT ROW ) ,2)AS rolling_3_month_avg_revenue
+FROM market_month
+ORDER BY market DESC
+
 
 -- SQL Correction:
 
+-- Verdict: Correct
+-- Interview pass likelihood: Likely Pass
+
+-- What is good:
+
+-- Correct 6 full months filter.
+-- Correct monthly aggregation first.
+-- Correct rolling window frame.
+-- Correct grain: market + month.
+-- No join duplication risk.
+
+-- What is missing or risky:
+
+-- ORDER BY market DESC is not wrong, but better use ORDER BY market, month_start.
+-- First two months use partial rolling averages. That is usually acceptable unless the business asks for only complete 3-month windows.
 
 
 -- Request 7
