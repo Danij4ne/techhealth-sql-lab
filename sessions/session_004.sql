@@ -637,14 +637,113 @@ ORDER BY market DESC
 
 -- Request 7
 -- Question:
+
+-- Request 7/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10–12 min
+-- Main skill tested: Percent of total + ranking with window functions
+--
+-- Business question:
+-- For the last full month, identify each market’s share of total company revenue and rank markets from highest to lowest revenue.
+--
+-- Expected output:
+-- - market
+-- - market_revenue
+-- - company_total_revenue
+-- - pct_of_company_revenue
+-- - market_rank
+--
+-- Granularity:
+-- One row per market 
  
 
 -- My SQL:
+
+
+
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+) ,
+month_time AS(
+    SELECT 
+    DATE_TRUNC('month',max_date) AS finish_month ,
+    DATE_TRUNC('month',max_date) - INTERVAL '1 month' AS start_month
+    FROM max_dates
+) ,
+market_revenue AS (
+    SELECT r.market , SUM(f.net_amount) AS market_revenue , SUM(SUM(f.net_amount)) OVER() AS company_total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk 
+    CROSS JOIN month_time m
+    WHERE d.full_date >= m.start_month AND d.full_date < m.finish_month
+    GROUP BY r.market
+) 
+SELECT market, market_revenue , company_total_revenue,
+ROUND(market_revenue / NULLIF(company_total_revenue,0) * 100 ,2) AS pct_of_company_revenue ,
+ROW_NUMBER() OVER(PARTITION BY market ORDER BY market_revenue DESC) AS market_rank
+FROM market_revenue
+ORDER BY pct_of_company_revenue DESC
  
 
 -- SQL Correction:
 
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline
+--
+-- What is good:
+--
+-- Correct last full month filter.
+-- Correct market-level aggregation.
+-- Correct company total logic with SUM(SUM(...)) OVER ().
+-- Correct pct denominator.
+--
+-- What is missing or risky:
+--
+-- ROW_NUMBER() OVER(PARTITION BY market...) is wrong here. Since each market has one row, every rank becomes 1.
+-- Ranking should be across all markets, so no PARTITION BY.
+-- Use 100.0, not 100.
+--
+-- Corrected version:
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_time AS (
+    SELECT 
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM max_dates
+),
+market_revenue AS (
+    SELECT
+        r.market,
+        SUM(f.net_amount) AS market_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk 
+    CROSS JOIN month_time m
+    WHERE d.full_date >= m.start_month
+      AND d.full_date < m.finish_month
+    GROUP BY r.market
+)
+SELECT
+    market,
+    market_revenue,
+    SUM(market_revenue) OVER () AS company_total_revenue,
+    ROUND(
+        market_revenue * 100.0 / NULLIF(SUM(market_revenue) OVER (), 0),
+        2
+    ) AS pct_of_company_revenue,
+    ROW_NUMBER() OVER (ORDER BY market_revenue DESC) AS market_rank
+FROM market_revenue
+ORDER BY market_rank;
 
 
 -- Request 8
