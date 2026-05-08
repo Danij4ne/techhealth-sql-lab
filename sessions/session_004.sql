@@ -748,13 +748,157 @@ ORDER BY market_rank;
 
 -- Request 8
 -- Question:
+-- Request 8/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12–15 min
+-- Main skill tested: QoQ comparison + percentage change + window functions
+--
+-- Business question:
+-- For each market, compare revenue in the last full quarter against the previous full quarter. Show the absolute revenue change and percentage revenue change.
+--
+-- Expected output:
+-- - market
+-- - last_full_quarter_revenue
+-- - previous_full_quarter_revenue
+-- - revenue_change
+-- - pct_revenue_change
+--
+-- Granularity:
+-- One row per market
  
 
 -- My SQL:
  
+ WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_time AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) AS finish_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '3 months' AS last_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '6 months' AS previous_quarter
+    FROM max_dates 
+),
+markets_revenue AS (
+    SELECT 
+        r.market,
+        DATE_TRUNC('quarter', d.full_date) AS date_revenue,
+        SUM(f.net_amount) AS revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk 
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.previous_quarter 
+      AND d.full_date < q.finish_quarter
+    GROUP BY r.market, DATE_TRUNC('quarter', d.full_date)
+),
+last_previous_revenues AS (
+    SELECT 
+        m.market,
+
+        SUM(CASE 
+            WHEN m.date_revenue = q.previous_quarter 
+            THEN m.revenue 
+        END) AS previous_full_quarter_revenue,
+
+        SUM(CASE 
+            WHEN m.date_revenue = q.last_quarter 
+            THEN m.revenue 
+        END) AS last_full_quarter_revenue
+
+    FROM markets_revenue m
+    CROSS JOIN quarter_time q
+    GROUP BY m.market
+)
+SELECT 
+    market,
+    previous_full_quarter_revenue,
+    last_full_quarter_revenue,
+    ROUND(last_full_quarter_revenue - previous_full_quarter_revenue, 2) AS revenue_change,
+    ROUND(
+        (last_full_quarter_revenue - previous_full_quarter_revenue) 
+        / NULLIF(previous_full_quarter_revenue, 0) * 100,
+        2
+    ) AS pct_revenue_change
+FROM last_previous_revenues;
+
 
 -- SQL Correction:
 
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline / Likely Pass
+
+-- What is good:
+
+-- Correct quarter date logic.
+-- Correct filter for previous + last full quarter.
+-- Correct pct change formula.
+-- Correct grain: one row per market.
+-- No duplication risk.
+
+-- What is missing or risky:
+
+-- Expected output order asked for last_full_quarter_revenue before previous_full_quarter_revenue.
+-- Use 100.0, not 100.
+-- The question focuses on window functions, but you solved it with conditional aggregation. Correct, but less ideal for this practice.
+
+-- Cleaner window version:
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_time AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) AS finish_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '6 months' AS start_quarter
+    FROM max_dates
+),
+quarterly_revenue AS (
+    SELECT
+        r.market,
+        DATE_TRUNC('quarter', d.full_date) AS quarter_start,
+        SUM(f.net_amount) AS quarter_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_time q
+    WHERE d.full_date >= q.start_quarter
+      AND d.full_date < q.finish_quarter
+    GROUP BY r.market, DATE_TRUNC('quarter', d.full_date)
+),
+with_previous AS (
+    SELECT
+        market,
+        quarter_start,
+        quarter_revenue,
+        LAG(quarter_revenue) OVER (
+            PARTITION BY market
+            ORDER BY quarter_start
+        ) AS previous_quarter_revenue
+    FROM quarterly_revenue
+)
+SELECT
+    market,
+    quarter_revenue AS last_full_quarter_revenue,
+    previous_quarter_revenue AS previous_full_quarter_revenue,
+    quarter_revenue - previous_quarter_revenue AS revenue_change,
+    ROUND(
+        (quarter_revenue - previous_quarter_revenue) * 100.0
+        / NULLIF(previous_quarter_revenue, 0),
+        2
+    ) AS pct_revenue_change
+FROM with_previous
+WHERE quarter_start = (
+    SELECT finish_quarter - INTERVAL '3 months'
+    FROM quarter_time
+)
+ORDER BY market;
 
 
 -- Request 9
