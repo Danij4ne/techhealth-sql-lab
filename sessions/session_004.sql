@@ -903,12 +903,64 @@ ORDER BY market;
 
 -- Request 9
 -- Question:
+
+-- Request 9/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12–15 min
+-- Main skill tested: Window functions + share of total + ranking
+--
+-- Business question:
+-- For the last full quarter, calculate each product category’s revenue share within each market and rank categories by revenue inside each market.
+--
+-- Expected output:
+-- - market
+-- - category
+-- - category_revenue
+-- - market_total_revenue
+-- - pct_of_market_revenue
+-- - category_rank
+--
+-- Granularity:
+-- One row per market + category
  
 
 -- My SQL:
 
 
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date 
+),
+quarter_date AS(
+    SELECT
+    DATE_TRUNC('quarter', max_date) AS  finish_quarter,
+    DATE_TRUNC('quarter', max_date) - INTERVAL '3 months' AS start_quarter
+    FROM max_dates
+),
+market_and_category AS(
+    SELECT r.market , p.product_category AS category , SUM(f.net_amount) AS category_revenue , SUM(SUM(f.net_amount)) OVER(PARTITION BY r.market) AS market_total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    CROSS JOIN quarter_date q
+    WHERE d.full_date >= q.start_quarter AND  d.full_date < q.finish_quarter
+    GROUP BY r.market , p.product_category 
+) 
+SELECT market , category , category_revenue , market_total_revenue ,
+ROUND((category_revenue / NULLIF(market_total_revenue ,0))* 100.0 ,2) AS pct_of_market_revenue ,
+ROW_NUMBER() OVER(PARTITION BY market ORDER BY category_revenue DESC ) AS category_rank
+FROM market_and_category
+ORDER BY market
+
+
 -- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
  
 
 
