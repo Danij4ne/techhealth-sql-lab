@@ -963,15 +963,75 @@ ORDER BY market
 --Interview pass likelihood: Likely Pass
  
 
-
 -- Request 10
 -- Question:
- 
 
+-- Request 10/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12–15 min
+-- Main skill tested: Window functions + YoY percentage change
+--
+-- Business question:
+-- For each market, compare revenue in the last full year against the previous full year. Show the absolute revenue change and percentage revenue change.
+--
+-- Expected output:
+-- - market
+-- - last_full_year_revenue
+-- - previous_full_year_revenue
+-- - revenue_change
+-- - pct_revenue_change
+--
+-- Granularity:
+-- One row per market
+ 
 -- My SQL:
 
 
+
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date 
+),
+year_date AS(
+    SELECT
+    DATE_TRUNC('year', max_date) AS  finish_year,
+    DATE_TRUNC('year', max_date) - INTERVAL '1 years' AS last_year,
+    DATE_TRUNC('year', max_date) - INTERVAL '2 years' AS start_previous_year
+    FROM max_dates
+),
+market_and_year AS(
+    SELECT r.market , DATE_TRUNC('year', d.full_date) AS year_date, SUM(f.net_amount) AS revenue 
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    CROSS JOIN year_date y
+    WHERE d.full_date >= y.start_previous_year AND  d.full_date < y.finish_year
+    GROUP BY r.market , DATE_TRUNC('year', d.full_date) 
+),
+market_previous AS(
+    SELECT market , year_date , revenue , 
+    LAG(revenue) OVER (PARTITION BY market ORDER BY year_date) AS previous_full_year_revenue
+    FROM market_and_year
+) 
+SELECT m.market , m.year_date , m.revenue AS last_full_year_revenue  , m.previous_full_year_revenue,
+ROUND(m.revenue - m.previous_full_year_revenue ,2)AS revenue_change ,
+    ROUND(
+        (m.revenue - m.previous_full_year_revenue) * 100.0 
+        / NULLIF(m.previous_full_year_revenue, 0),
+        2
+    ) AS pct_revenue_change
+FROM market_previous m
+CROSS JOIN year_date y
+WHERE m.year_date = y.last_year
+ORDER BY m.market
+
+
 -- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
  
 
 
