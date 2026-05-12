@@ -1037,18 +1037,96 @@ ORDER BY m.market
 
 -- Request 11
 -- Question:
+
+-- Request 11/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12–15 min
+-- Main skill tested: Window functions + first/last month comparison + pct change
+--
+-- Business question:
+-- For each market, compare revenue in the most recent full month against the earliest month in the last 6 full months. Show the absolute change and percentage change.
+--
+-- Expected output:
+-- - market
+-- - earliest_month_revenue
+-- - latest_month_revenue
+-- - revenue_change
+-- - pct_revenue_change
+--
+-- Granularity:
+-- One row per market
  
 
 -- My SQL:
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_time AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '6 months' AS start_month
+    FROM max_dates
+),
+market_and_month AS (
+    SELECT 
+        r.market,
+        DATE_TRUNC('month', d.full_date) AS month_date,
+        SUM(f.net_amount) AS revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    CROSS JOIN month_time mt
+    WHERE d.full_date >= mt.start_month
+      AND d.full_date < mt.finish_month
+    GROUP BY r.market, DATE_TRUNC('month', d.full_date)
+),
+market_window AS (
+    SELECT
+        market,
+        FIRST_VALUE(revenue) OVER (
+            PARTITION BY market
+            ORDER BY month_date
+        ) AS earliest_month_revenue,
+        LAST_VALUE(revenue) OVER (
+            PARTITION BY market
+            ORDER BY month_date
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+        ) AS latest_month_revenue,
+        ROW_NUMBER() OVER (
+            PARTITION BY market
+            ORDER BY month_date DESC
+        ) AS rn
+    FROM market_and_month
+)
+SELECT
+    market,
+    earliest_month_revenue,
+    latest_month_revenue,
+    ROUND(latest_month_revenue - earliest_month_revenue, 2) AS revenue_change,
+    ROUND(
+        (latest_month_revenue - earliest_month_revenue) * 100.0
+        / NULLIF(earliest_month_revenue, 0),
+        2
+    ) AS pct_revenue_change
+FROM market_window
+WHERE rn = 1
+ORDER BY market;
+
 
 -- SQL Correction:
  
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 
 -- Request 12
 -- Question:
- 
+
+
 
 -- My SQL:
 
