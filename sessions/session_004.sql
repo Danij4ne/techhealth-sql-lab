@@ -1126,13 +1126,91 @@ ORDER BY market;
 -- Request 12
 -- Question:
 
+-- Request 12/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12–15 min
+--
+-- Business question:
+-- For the last full month, rank products by revenue within each market and show how much revenue each product is above or below the product ranked immediately before it.
+--
+-- Expected output:
+-- - market
+-- - product_name
+-- - product_revenue
+-- - previous_rank_product_revenue
+-- - revenue_difference_vs_previous_rank
+-- - pct_difference_vs_previous_rank
+-- - product_rank
+--
+-- Granularity:
+-- One row per market + product
 
 
 -- My SQL:
 
 
+WITH max_dates AS(
+    SELECT max(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_time AS(
+    SELECT 
+    DATE_TRUNC('month', max_date) AS finish_month,
+    DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM max_dates
+),
+market_revenue AS(
+    SELECT r.market , p.product_name , SUM(f.net_amount) AS product_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN month_time m
+    WHERE d.full_date >= m.start_month AND d.full_date < m.finish_month
+    GROUP BY r.market , p.product_name 
+) ,
+previous_rank AS(
+    SELECT market, product_name, product_revenue , 
+    LAG(product_revenue) OVER(PARTITION BY market ORDER BY product_revenue DESC) AS previous_rank_product_revenue
+    FROM market_revenue
+) 
+    SELECT market , product_name , product_revenue , previous_rank_product_revenue,
+    ROUND(product_revenue - previous_rank_product_revenue ,2) AS revenue_difference_vs_previous_rank ,
+    ROUND(product_revenue * 100.0 / NULLIF(previous_rank_product_revenue,0),2) AS pct_difference_vs_previous_rank,
+    ROW_NUMBER() OVER(PARTITION BY market ORDER BY product_revenue DESC) AS product_rank
+    FROM previous_rank
+    ORDER BY market , product_revenue DESC
+
+
+
+
 -- SQL Correction:
- 
+ -- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good:
+
+-- Correct last full month filter.
+-- Correct grain: market + product.
+-- Correct previous-ranked product logic.
+-- No duplication risk.
+
+-- What is missing or risky:
+
+-- The percentage formula is wrong for “difference vs previous rank”.
+-- You calculated product_revenue / previous_rank_product_revenue.
+-- It should calculate the difference divided by the previous rank revenue.
+
+-- Correct pct formula:
+
+ROUND(
+    (product_revenue - previous_rank_product_revenue) * 100.0
+    / NULLIF(previous_rank_product_revenue, 0),
+    2
+) AS pct_difference_vs_previous_rank
 
 
 -- Request 13
