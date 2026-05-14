@@ -1215,12 +1215,110 @@ ROUND(
 
 -- Request 13
 -- Question:
+
+-- Request 13/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12–15 min
+--
+-- Business question:
+-- For each market, show monthly revenue for the last 6 full months and the cumulative revenue from the first month in that period through each month.
+--
+-- Expected output:
+-- - market
+-- - month_start
+-- - monthly_revenue
+-- - cumulative_revenue
+--
+-- Granularity:
+-- One row per market + month
  
 
 -- My SQL:
 
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date 
+    FROM dw.dim_date 
+) ,
+month_time AS(
+    SELECT
+    DATE_TRUNC('month', max_date) AS last_month ,
+    DATE_TRUNC('month', max_date) - INTERVAL '6 months' AS start_month 
+    FROM max_dates
+) ,
+market_revenue AS(
+    SELECT  r.market , DATE_TRUNC('month', d.full_date) AS month_start , SUM(f.net_amount) AS monthly_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN month_time m
+    WHERE d.full_date >= m.start_month OR d.full_date < m.last_month 
+    GROUP BY r.market , DATE_TRUNC('month', d.full_date) 
+) 
+    SELECT market , month_start , monthly_revenue ,
+    SUM(monthly_revenue) OVER( ORDER BY month_start) cumulative_revenue
+    FROM market_revenue
+    ORDER BY market , cumulative_revenue ASC
+
+
+
 -- SQL Correction:
+
+-- Verdict: Wrong
+-- Interview pass likelihood: Likely Fail
+--
+-- What is good:
+--
+-- You aggregated first at market + month, which is correct.
+-- You used a window sum idea, which is the right direction.
+--
+-- What is missing or risky:
+--
+-- Your date filter uses OR; it should be AND.
+-- Your cumulative sum is missing PARTITION BY market, so it mixes all markets together.
+-- Your cumulative order should be by month_start, not final cumulative_revenue.
+-- Better to use an explicit frame.
+--
+-- Corrected version:
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date 
+    FROM dw.dim_date 
+),
+month_time AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '6 months' AS start_month 
+    FROM max_dates
+),
+market_revenue AS (
+    SELECT
+        r.market,
+        DATE_TRUNC('month', d.full_date) AS month_start,
+        SUM(f.net_amount) AS monthly_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_time m
+    WHERE d.full_date >= m.start_month
+      AND d.full_date < m.finish_month
+    GROUP BY r.market, DATE_TRUNC('month', d.full_date)
+)
+SELECT
+    market,
+    month_start,
+    monthly_revenue,
+    SUM(monthly_revenue) OVER (
+        PARTITION BY market
+        ORDER BY month_start
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS cumulative_revenue
+FROM market_revenue
+ORDER BY market, month_start;
  
 
 
