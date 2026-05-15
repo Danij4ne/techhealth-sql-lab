@@ -1324,9 +1324,35 @@ ORDER BY market, month_start;
 
 -- Request 14
 -- Question:
- 
+
+-- Request 14/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8–10 min
+--
+-- Business question:
+-- Identify the 10 products that generate the highest total revenue. The commercial team wants to prioritize inventory planning.
+--
+-- Expected output:
+-- - product_name
+-- - total_revenue
+-- - total_orders
+-- - total_units_sold
+--
+-- Granularity:
+-- One row per product
+
 
 -- My SQL:
+
+
+SELECT p.product_name , SUM(f.net_amount) AS total_revenue , 
+COUNT(f.sale_id) AS total_orders , SUM(f.quantity) AS total_units_sold
+FROM dw.fact_sales f
+JOIN dw.dim_product p
+ON f.product_sk = p.product_sk
+GROUP BY p.product_name
+ORDER BY SUM(f.net_amount) DESC
+LIMIT 10
 
 
 -- SQL Correction:
@@ -1336,13 +1362,48 @@ ORDER BY market, month_start;
 -- Request 15
 -- Question:
  
+ -- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good:
+
+-- Correct fact table.
+-- Correct join.
+-- Correct grain: one row per product.
+-- Correct revenue and units aggregation.
+
+-- What is missing or risky:
+
+-- COUNT(f.sale_id) may overcount if a sale has multiple product rows.
+-- Better use:
+-- COUNT(DISTINCT f.sale_id)
 
 -- My SQL:
 
+SELECT p.product_name , SUM(f.net_amount) AS total_revenue , 
+COUNT(f.sale_id) AS total_orders , SUM(f.quantity) AS total_units_sold
+FROM dw.fact_sales f
+JOIN dw.dim_product p
+ON f.product_sk = p.product_sk
+GROUP BY p.product_name
+ORDER BY SUM(f.net_amount) DESC
+LIMIT 10
+
+
 
 -- SQL Correction:
- 
 
+SELECT
+    p.product_name,
+    SUM(f.net_amount) AS total_revenue,
+    COUNT(DISTINCT f.sale_id) AS total_orders,
+    SUM(f.quantity) AS total_units_sold
+FROM dw.fact_sales f
+JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+GROUP BY p.product_name
+ORDER BY total_revenue DESC
+LIMIT 10;
 
 -- Request 16
 -- Question:
