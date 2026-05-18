@@ -1408,11 +1408,49 @@ LIMIT 10;
 -- Request 16
 -- Question:
  
+ -- Request 16/25 [MID-HIGH]
+-- Type: Realistic
+-- Estimated solve time: 12–15 min
+--
+-- Business question:
+-- Calculate total revenue by month and the percentage variation compared to the previous month. Identify trends and unusual months.
+--
+-- Expected output:
+-- - month_start
+-- - monthly_revenue
+-- - previous_month_revenue
+-- - revenue_change
+-- - pct_revenue_change
+--
+-- Granularity:
+-- One row per month
 
 -- My SQL:
 
+WITH month_revenue AS(
+    SELECT DATE_TRUNC('month', d.full_date) AS month_start, SUM(f.net_amount) AS monthly_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    GROUP BY DATE_TRUNC('month', d.full_date)
+) ,
+month_and_previous_month AS(
+    SELECT month_start , monthly_revenue , 
+    LAG(monthly_revenue) OVER(ORDER BY month_start) AS previous_month_revenue
+    FROM month_revenue
+) 
+SELECT month_start , monthly_revenue , previous_month_revenue , 
+ROUND(monthly_revenue - previous_month_revenue,2) AS revenue_change ,
+ROUND((monthly_revenue - previous_month_revenue)/ NULLIF(previous_month_revenue,0) * 100.0,2) AS pct_revenue_change
+FROM month_and_previous_month
+ORDER BY month_start 
+
+
 
 -- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
  
 
 
