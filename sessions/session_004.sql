@@ -1453,14 +1453,47 @@ ORDER BY month_start
 --Interview pass likelihood: Likely Pass
  
 
-
 -- Request 17
 -- Question:
+
+-- Request 17/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8–10 min
+--
+-- Business question:
+-- Generate a ranking of customers based on their total accumulated spend. The business wants to identify the most valuable customers.
+--
+-- Expected output:
+-- - customer_id
+-- - gender
+-- - country
+-- - subscription_type
+-- - total_revenue
+-- - customer_rank
+--
+-- Granularity:
+-- One row per customer
+
  
 -- My SQL:
 
+WITH customers_rv AS(
+    SELECT c.customer_id , c.gender , c.country , c.subscription_type , SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_customer c
+    ON  f.customer_sk = c.customer_sk
+    GROUP BY c.customer_id , c.gender , c.country , c.subscription_type 
+) 
+SELECT customer_id , gender , country , subscription_type , total_revenue ,
+ROW_NUMBER()OVER(ORDER BY total_revenue DESC) AS customer_rank
+FROM customers_rv
+ORDER BY customer_rank ASC
+
 
 -- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
  
 
 
