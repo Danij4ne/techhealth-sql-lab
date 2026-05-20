@@ -1499,14 +1499,46 @@ ORDER BY customer_rank ASC
 
 -- Request 18
 -- Question:
+
+-- Request 18/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10–12 min
+--
+-- Business question:
+-- For each product category, calculate what percentage of total company revenue it represents.
+--
+-- Expected output:
+-- - product_category
+-- - category_revenue
+-- - company_total_revenue
+-- - pct_of_company_revenue
+--
+-- Granularity:
+-- One row per product category
  
 
 -- My SQL:
 
 
--- SQL Correction:
- 
+WITH categories AS(
+    SELECT p.product_category , SUM(f.net_amount) AS category_revenue , SUM(SUM(f.net_amount)) OVER() AS company_total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    GROUP BY p.product_category
+    
+) 
+SELECT product_category , category_revenue , company_total_revenue ,
+ROUND((category_revenue * 100) / NULLIF(company_total_revenue,0),2)
+FROM categories
+ORDER BY category_revenue DESC
 
+
+-- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
+ 
 
 -- Request 19
 -- Question:
