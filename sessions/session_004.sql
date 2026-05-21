@@ -1542,12 +1542,105 @@ ORDER BY category_revenue DESC
 
 -- Request 19
 -- Question:
+
+-- Request 19/25 [MID-HIGH]
+-- Type: Realistic
+-- Estimated solve time: 12–15 min
+--
+-- Business question:
+-- Identify the top 3 customers by revenue within each subscription type.
+-- The business wants to understand which customers are most valuable inside each subscription segment.
+--
+-- Expected output:
+-- - subscription_type
+-- - customer_id
+-- - country
+-- - total_revenue
+-- - customer_rank
+--
+-- Granularity:
+-- One row per subscription type + customer, only top 3 customers per subscription type.
  
 
 -- My SQL:
 
+With suscription_custom AS(
+    SELECT c.subscription_type , c.customer_id , r.country , SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_customer c
+    ON f.customer_sk = c.customer_sk
+    GROUP BY c.subscription_type , c.customer_id , r.country 
+    
+),
+ranking_type AS(
+    SELECT subscription_type , customer_id , country , total_revenue , 
+    ROW_NUMBER() OVER( PARTITION BY subscription_type  ORDER BY total_revenue DESC ) AS customer_rank
+    FROM suscription_custom
+    
+)
+SELECT subscription_type , customer_id , country, total_revenue , customer_rank
+FROM ranking_type
+WHERE  customer_rank <= 3
+ORDER BY subscription_type 
+
  
 -- SQL Correction:
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline / Likely Pass
+
+-- What is good:
+
+-- Correct use of CTEs.
+-- Correct ranking by subscription type.
+-- Correct top 3 filter.
+-- Correct final grain idea: subscription type + customer.
+
+-- What is missing or risky:
+
+-- You selected r.country from dim_region, but the expected output wants customer country. Use c.country.
+-- Grouping by r.country could split the same customer if they bought in different regions.
+-- Better final order: subscription_type, customer_rank.
+
+-- Corrected version:
+
+WITH subscription_customer AS (
+    SELECT
+        c.subscription_type,
+        c.customer_id,
+        c.country,
+        SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_customer c
+        ON f.customer_sk = c.customer_sk
+    GROUP BY
+        c.subscription_type,
+        c.customer_id,
+        c.country
+),
+ranking_type AS (
+    SELECT
+        subscription_type,
+        customer_id,
+        country,
+        total_revenue,
+        ROW_NUMBER() OVER (
+            PARTITION BY subscription_type
+            ORDER BY total_revenue DESC
+        ) AS customer_rank
+    FROM subscription_customer
+)
+SELECT
+    subscription_type,
+    customer_id,
+    country,
+    total_revenue,
+    customer_rank
+FROM ranking_type
+WHERE customer_rank <= 3
+ORDER BY subscription_type, customer_rank;
 
 
 -- Request 20
