@@ -1645,13 +1645,59 @@ ORDER BY subscription_type, customer_rank;
 
 -- Request 20
 -- Question:
- 
+
+-- Request 20/25 [MID-HIGH]
+-- Type: Granularity
+-- Estimated solve time: 12–15 min
+--
+-- Business question:
+-- For each customer, compare their total sales revenue with their total monthly engagement minutes.
+-- The business wants to see whether higher-spending customers are also highly engaged users.
+--
+-- Expected output:
+-- - customer_id
+-- - country
+-- - subscription_type
+-- - total_revenue
+-- - total_engagement_minutes
+--
+-- Granularity:
+-- One row per customer
 
 -- My SQL:
+
+WITH customer_revenue AS (
+    SELECT
+        customer_sk,
+        SUM(net_amount) AS total_revenue
+    FROM dw.fact_sales
+    GROUP BY customer_sk
+),
+customer_engagement AS (
+    SELECT
+        customer_sk,
+        SUM(total_usage_minutes) AS total_engagement_minutes
+    FROM dw.fact_user_engagement_monthly
+    GROUP BY customer_sk
+)
+SELECT
+    c.customer_id,
+    c.country,
+    c.subscription_type,
+    r.total_revenue,
+    e.total_engagement_minutes
+FROM dw.dim_customer c
+LEFT JOIN customer_revenue r
+    ON c.customer_sk = r.customer_sk
+LEFT JOIN customer_engagement e
+    ON c.customer_sk = e.customer_sk
+ORDER BY r.total_revenue DESC;
 
 
 -- SQL Correction:
  
+ --Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 
 -- Request 21
