@@ -1703,11 +1703,152 @@ ORDER BY r.total_revenue DESC;
 -- Request 21
 -- Question:
  
+-- Request 21/25 [GRANULARITY]
+-- Type: Granularity
+-- Estimated solve time: 12–15 min
+--
+-- Business question:
+-- For each market and month, show total sales revenue and total device usage minutes.
+-- The business wants to compare regional sales performance against product engagement trends.
+--
+-- Expected output:
+-- - market
+-- - month_start
+-- - total_revenue
+-- - total_usage_minutes
+--
+-- Granularity:
+-- One row per market + month
+
 
 -- My SQL:
 
+WITH customer_market AS (
+    SELECT DISTINCT
+        f.customer_sk,
+        r.market
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+),
+
+market_rv AS (
+    SELECT  
+        r.market,
+        DATE_TRUNC('month', d.full_date) AS month_start,
+        SUM(f.net_amount) AS total_revenue 
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk 
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    GROUP BY 
+        r.market,
+        DATE_TRUNC('month', d.full_date)
+),
+
+usage_minutes AS (
+    SELECT 
+        cm.market,
+        DATE_TRUNC('month', d.full_date) AS month_start,
+        SUM(y.usage_minutes) AS total_usage_minutes
+    FROM dw.fact_device_usage_daily y
+    JOIN dw.dim_date d
+        ON y.date_sk = d.date_sk
+    JOIN customer_market cm
+        ON y.customer_sk = cm.customer_sk
+    GROUP BY 
+        cm.market,
+        DATE_TRUNC('month', d.full_date)
+)
+
+SELECT 
+    m.market,
+    m.month_start,
+    m.total_revenue,
+    u.total_usage_minutes
+FROM market_rv m
+JOIN usage_minutes u
+    ON m.market = u.market 
+   AND m.month_start = u.month_start
+ORDER BY 
+    m.market,
+    m.total_revenue DESC;
+
+
 
 -- SQL Correction:
+
+--Verdict: Wrong
+--Interview pass likelihood: Likely Fail
+
+-- What is good:
+--
+-- Correct final grain intention: one row per customer.
+-- You identified the two fact tables involved.
+-- Correct customer dimension usage.
+--
+-- What is missing or risky:
+--
+-- This is the classic dangerous mistake:
+--
+-- fact_sales
+-- JOIN fact_user_engagement_monthly
+--
+-- directly at row level.
+--
+-- You created a fact-to-fact join explosion.
+--
+-- Every sales row for a customer gets multiplied by every monthly engagement row for that customer.
+--
+-- So both:
+--
+-- revenue
+-- engagement minutes
+--
+-- become inflated.
+--
+-- Also:
+--
+-- dim_product
+-- dim_region
+--
+-- are unnecessary here.
+--
+-- This is EXACTLY one of the most important interview granularity traps.
+--
+-- Correct approach:
+
+-- aggregate EACH fact table separately FIRST
+-- then join at customer grain
+
+WITH customer_revenue AS (
+    SELECT
+        customer_sk,
+        SUM(net_amount) AS total_revenue
+    FROM dw.fact_sales
+    GROUP BY customer_sk
+),
+customer_engagement AS (
+    SELECT
+        customer_sk,
+        SUM(total_usage_minutes) AS total_engagement_minutes
+    FROM dw.fact_user_engagement_monthly
+    GROUP BY customer_sk
+)
+SELECT
+    c.customer_id,
+    c.country,
+    c.subscription_type,
+    r.total_revenue,
+    e.total_engagement_minutes
+FROM dw.dim_customer c
+LEFT JOIN customer_revenue r
+    ON c.customer_sk = r.customer_sk
+LEFT JOIN customer_engagement e
+    ON c.customer_sk = e.customer_sk
+ORDER BY r.total_revenue DESC;
+
  
 
 
