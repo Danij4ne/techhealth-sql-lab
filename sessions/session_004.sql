@@ -1854,14 +1854,93 @@ ORDER BY r.total_revenue DESC;
 
 -- Request 22
 -- Question:
+
+-- Request 22/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12–15 min
+--
+-- Business question:
+-- For each customer, identify their first purchase and their most recent purchase.
+-- Show the revenue of both purchases and the percentage change from the first purchase to the most recent purchase.
+--
+-- Expected output:
+-- - customer_id
+-- - country
+-- - first_purchase_date
+-- - first_purchase_revenue
+-- - latest_purchase_date
+-- - latest_purchase_revenue
+-- - pct_change_from_first_to_latest
+--
+-- Granularity:
+-- One row per customer
  
 
 -- My SQL:
 
+WITH customer_stats AS (
+    SELECT 
+        c.customer_id,
+        c.country,
+        f.net_amount,
+        d.full_date
+    FROM dw.fact_sales f
+    JOIN dw.dim_customer c
+        ON f.customer_sk = c.customer_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk 
+),
+
+first_purchase_date_revenue AS (
+    SELECT 
+        customer_id,
+        country,
+        full_date AS first_purchase_date,
+        net_amount AS first_purchase_revenue,
+        ROW_NUMBER() OVER(
+            PARTITION BY customer_id 
+            ORDER BY full_date ASC
+        ) AS rank_pr
+    FROM customer_stats
+),
+
+last_purchase_date_revenue AS (
+    SELECT 
+        customer_id,
+        country,
+        full_date AS latest_purchase_date,
+        net_amount AS latest_purchase_revenue,
+        ROW_NUMBER() OVER(
+            PARTITION BY customer_id 
+            ORDER BY full_date DESC
+        ) AS rank_fn
+    FROM customer_stats
+)
+
+SELECT 
+    f.customer_id,
+    f.country,
+    f.first_purchase_date,
+    f.first_purchase_revenue,
+    l.latest_purchase_date,
+    l.latest_purchase_revenue,
+    ROUND(
+        (l.latest_purchase_revenue - f.first_purchase_revenue)
+        / NULLIF(f.first_purchase_revenue, 0) * 100.0,
+        2
+    ) AS pct_change_from_first_to_latest
+FROM first_purchase_date_revenue f
+JOIN last_purchase_date_revenue l
+    ON f.customer_id = l.customer_id
+WHERE f.rank_pr = 1
+  AND l.rank_fn = 1;
+
 
 -- SQL Correction:
- 
 
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
+ 
 
 -- Request 23
 -- Question:
