@@ -1944,13 +1944,71 @@ WHERE f.rank_pr = 1
 
 -- Request 23
 -- Question:
+
+-- Request 23/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12–15 min
+--
+-- Business question:
+-- For each market, show monthly revenue for the last 6 full months
+-- and calculate the revenue still remaining from that month through the end of the 6-month period.
+--
+-- Expected output:
+-- - market
+-- - month_start
+-- - monthly_revenue
+-- - remaining_revenue_from_month
+--
+-- Granularity:
+-- One row per market + month
  
 
 -- My SQL:
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+last_6_full_months AS (
+    SELECT
+        DATE_TRUNC('month', max_date) - INTERVAL '6 months' AS start_month,
+        DATE_TRUNC('month', max_date) AS finish_month
+    FROM max_dates
+),
+monthly_revenue AS (
+    SELECT
+        r.market,
+        DATE_TRUNC('month', d.full_date) AS month_start,
+        SUM(f.net_amount) AS monthly_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    CROSS JOIN last_6_full_months lm
+    WHERE d.full_date >= lm.start_month
+      AND d.full_date < lm.finish_month
+    GROUP BY
+        r.market,
+        DATE_TRUNC('month', d.full_date)
+)
+SELECT
+    market,
+    month_start,
+    monthly_revenue,
+    SUM(monthly_revenue) OVER (
+        PARTITION BY market
+        ORDER BY month_start
+        ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
+    ) AS remaining_revenue_from_month
+FROM monthly_revenue
+ORDER BY market, month_start;
+
 
 -- SQL Correction:
  
+ --Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 
 -- Request 24
