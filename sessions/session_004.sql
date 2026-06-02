@@ -2013,12 +2013,77 @@ ORDER BY market, month_start;
 
 -- Request 24
 -- Question:
+
+-- Request 24/25 [HIGH]
+-- Type: High-level
+-- Estimated solve time: 15–20 min
+--
+-- Business question:
+-- For each market, show monthly revenue for the last 6 full months
+-- and calculate a 3-month moving average using the current month and the two previous months.
+--
+-- Expected output:
+-- - market
+-- - month_start
+-- - monthly_revenue
+-- - moving_3_month_avg_revenue
+--
+-- Granularity:
+-- One row per market + month
+
  
 
 -- My SQL:
 
+WITH max_day AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+
+month_dates AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '6 month' AS start_month
+    FROM max_day
+),
+
+market_stats AS (
+    SELECT
+        r.market,
+        DATE_TRUNC('month', d.full_date) AS month_start,
+        SUM(f.net_amount) AS monthly_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_dates s
+    WHERE d.full_date >= s.start_month
+      AND d.full_date < s.finish_month
+    GROUP BY
+        r.market,
+        DATE_TRUNC('month', d.full_date)
+)
+
+SELECT
+    market,
+    month_start,
+    monthly_revenue,
+    AVG(monthly_revenue) OVER (
+        PARTITION BY market
+        ORDER BY month_start
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+    ) AS moving_3_month_avg_revenue
+FROM market_stats
+ORDER BY
+    market,
+    month_start;
+
 
 -- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
  
 
 
