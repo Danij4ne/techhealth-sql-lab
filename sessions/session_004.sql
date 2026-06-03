@@ -2089,10 +2089,93 @@ ORDER BY
 
 -- Request 25
 -- Question:
+
+-- Request 25/25 [HIGH]
+-- Type: High-level
+-- Estimated solve time: 15–20 min
+--
+-- Business question:
+-- For each market, show monthly revenue for the last 6 full months
+-- and calculate the percentage of total 6-month market revenue
+-- that still remains from each month through the end of the period.
+--
+-- Expected output:
+-- - market
+-- - month_start
+-- - monthly_revenue
+-- - total_6_month_market_revenue
+-- - remaining_revenue_from_month
+-- - pct_remaining_from_month
+--
+-- Granularity:
+-- One row per market + month
  
 
 -- My SQL:
 
+WITH max_day AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+
+month_dates AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '6 month' AS start_month
+    FROM max_day
+),
+
+market_stats AS (
+    SELECT
+        r.market,
+        DATE_TRUNC('month', d.full_date) AS month_start,
+        SUM(f.net_amount) AS monthly_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_dates s
+    WHERE d.full_date >= s.start_month
+      AND d.full_date < s.finish_month
+    GROUP BY
+        r.market,
+        DATE_TRUNC('month', d.full_date)
+),
+
+market_stats_remaining AS (
+    SELECT
+        market,
+        month_start,
+        monthly_revenue,
+        SUM(monthly_revenue) OVER (
+            PARTITION BY market
+        ) AS total_6_month_market_revenue,
+        SUM(monthly_revenue) OVER (
+            PARTITION BY market
+            ORDER BY month_start
+            ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
+        ) AS remaining_revenue_from_month
+    FROM market_stats
+)
+
+SELECT
+    market,
+    month_start,
+    monthly_revenue,
+    total_6_month_market_revenue,
+    remaining_revenue_from_month,
+    ROUND(
+        remaining_revenue_from_month / NULLIF(total_6_month_market_revenue, 0) * 100.0,
+        2
+    ) AS pct_remaining_from_month
+FROM market_stats_remaining
+ORDER BY
+    market,
+    month_start;
+
 
 -- SQL Correction:
  
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
