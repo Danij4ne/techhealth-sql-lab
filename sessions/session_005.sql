@@ -125,14 +125,68 @@ LIMIT 5;
 
 -- Request 2
 -- Question:
- 
+
+-- Request 2/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10 min
+-- Main skill tested: Monthly aggregation + period-over-period comparison
+--
+-- Business question:
+-- The finance team wants to compare revenue performance between the last full month and the month before that.
+--
+-- Return total revenue for each of those two months, plus the absolute revenue difference compared with the previous month.
+--
+-- Expected output:
+-- - month_start
+-- - total_revenue
+-- - previous_month_revenue
+-- - revenue_difference
+--
+-- Only include the last two full months available in the data.
+--
+-- Granularity:
+-- One row per month.
+
 
 -- My SQL:
 
 
+
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date 
+) ,
+month_date AS(
+    SELECT 
+    DATE_TRUNC('month',max_date) AS finish_month,
+    DATE_TRUNC('month',max_date) - INTERVAL '1 month' AS start_month,
+    DATE_TRUNC('month',max_date) - INTERVAL '2 month' AS previous_month
+    FROM max_dates
+),
+month_revenue AS (
+    SELECT DATE_TRUNC('month', d.full_date) AS month_start , SUM(f.net_amount) AS total_revenue 
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN month_date m
+    WHERE  d.full_date >= m.previous_month AND d.full_date < m.finish_month
+    GROUP BY DATE_TRUNC('month', d.full_date)
+),
+previous_month AS(
+    SELECT r.month_start , r.total_revenue , 
+    LAG(r.total_revenue) OVER(ORDER BY r.month_start) AS previous_month_revenue
+    FROM month_revenue r
+)
+SELECT month_start , total_revenue , previous_month_revenue,
+total_revenue - previous_month_revenue AS revenue_difference
+FROM  previous_month
+
+
 -- SQL Correction:
  
-
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 -- Request 3
 -- Question:
