@@ -190,14 +190,142 @@ FROM  previous_month
 
 -- Request 3
 -- Question:
- 
+
+-- Request 3/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8 min
+-- Main skill tested: Aggregation + customer segmentation with CASE WHEN
+--
+-- Business question:
+-- The customer success team wants to classify customers based on their total revenue in the last full quarter.
+--
+-- Create a customer revenue segment for each customer who made at least one purchase during the last full quarter.
+--
+-- Use these segments:
+--
+-- - `High Value` if total revenue is 1000 or more
+-- - `Medium Value` if total revenue is at least 300 but less than 1000
+-- - `Low Value` if total revenue is less than 300
+--
+-- Expected output:
+-- - customer_id
+-- - total_revenue
+-- - revenue_segment
+--
+-- Granularity:
+-- One row per customer.
+
 
 -- My SQL:
 
 
--- SQL Correction:
- 
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date 
+) ,
+quarter_date AS(
+    SELECT 
+    DATE_TRUNC('month',max_date) AS finish_quarter,
+    DATE_TRUNC('month',max_date) - INTERVAL '3 month' AS start_quarter
+    FROM max_dates
+),
+customer_stats AS (
+    SELECT  c.customer_id , SUM(f.net_amount) AS total_revenue 
+    FROM dw.fact_sales f
+    JOIN dw.dim_customer c
+    ON f.customer_sk = c.customer_sk 
+    JOIN dw.dim_date d 
+    ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_date m
+    WHERE  d.full_date >= m.start_quarter AND d.full_date < m.finish_quarter
+    GROUP BY c.customer_id
+),
+customer_segment AS(
+    SELECT customer_id , total_revenue ,
+    CASE 
+    WHEN total_revenue >= 1000 THEN 'High Value'
+    WHEN  total_revenue >= 300 AND total_revenue <= 1000 THEN 'Medium Value'
+    WHEN total_revenue < 300 THEN 'Low Value'
+    END AS revenue_segment
+    FROM customer_stats
+)
+SELECT customer_id , total_revenue, revenue_segment
+FROM customer_segment
+ORDER BY customer_id
+
+
+-- SQL Correction:
+
+-- Verdict: Partial
+-- Interview pass likelihood: Borderline
+
+-- What is good
+
+-- Correct aggregation by customer.
+-- Correct use of CASE WHEN.
+-- Correct join between fact sales, customer, and date.
+-- Good that you noticed customer_name does not exist.
+
+-- What is missing or risky
+
+-- The question asked for the last full quarter, but your logic uses the last 3 full months, not the previous calendar quarter.
+
+-- This condition has overlap:
+
+WHEN total_revenue >= 1000 THEN 'High Value'
+WHEN total_revenue >= 300 AND total_revenue <= 1000 THEN 'Medium Value'
+
+-- 1000 technically fits both, although SQL will classify it as High Value because it checks the first match.
+
+-- Better:
+
+WHEN total_revenue >= 300 AND total_revenue < 1000 THEN 'Medium Value'
+
+-- Granularity correctness: Good.
+-- Join correctness / duplication risk: Good.
+
+-- Would this pass in a real interview?
+
+-- Probably partial.
+-- The main issue is quarter logic.
+
+-- Cleaner quarter logic:
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+quarter_date AS (
+    SELECT
+        DATE_TRUNC('quarter', max_date) AS finish_quarter,
+        DATE_TRUNC('quarter', max_date) - INTERVAL '3 months' AS start_quarter
+    FROM max_dates
+),
+customer_stats AS (
+    SELECT  
+        c.customer_id,
+        SUM(f.net_amount) AS total_revenue 
+    FROM dw.fact_sales f
+    JOIN dw.dim_customer c
+        ON f.customer_sk = c.customer_sk 
+    JOIN dw.dim_date d 
+        ON f.date_sk = d.date_sk
+    CROSS JOIN quarter_date q
+    WHERE d.full_date >= q.start_quarter 
+      AND d.full_date < q.finish_quarter
+    GROUP BY c.customer_id
+)
+SELECT 
+    customer_id,
+    total_revenue,
+    CASE 
+        WHEN total_revenue >= 1000 THEN 'High Value'
+        WHEN total_revenue >= 300 THEN 'Medium Value'
+        ELSE 'Low Value'
+    END AS revenue_segment
+FROM customer_stats
+ORDER BY customer_id;
 
 -- Request 4
 -- Question:
