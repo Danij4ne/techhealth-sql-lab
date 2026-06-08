@@ -329,11 +329,92 @@ ORDER BY customer_id;
 
 -- Request 4
 -- Question:
+
+-- Request 4/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10 min
+--
+-- Business question:
+-- The marketing team wants to find customers who joined but have not purchased anything yet.
+--
+-- Return all customers with no sales activity at all.
+--
+-- Expected output:
+-- - customer_id
+-- - total_orders
+-- - total_revenue
+-- - customer_status
+--
+-- total_orders should be 0.
+-- total_revenue should be 0.
+-- customer_status should be 'No Purchases'.
+--
+-- Granularity:
+-- One row per customer.
  
 -- My SQL:
 
 
+WITH customers_stats AS(
+    SELECT c.customer_id , COUNT(f.sale_id) AS total_orders , SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f 
+    RIGHT JOIN dw.dim_customer c
+    ON f.customer_sk = c.customer_sk 
+    GROUP BY c.customer_id 
+),
+customer_purchase AS(
+SELECT customer_id , total_orders , total_revenue, 
+CASE WHEN total_orders = 0 AND total_revenue = NULL THEN 'No Purchases' END AS customer_status
+FROM customers_stats
+)
+SELECT customer_id , total_orders , total_revenue , customer_status
+FROM customer_purchase
+WHERE customer_status = 'No Purchases'
+
+
 -- SQL Correction:
+
+-- Verdict: Wrong
+-- Interview pass likelihood: Likely Fail
+
+-- What is good
+
+-- You understood that customers without sales must still appear.
+-- The grain is intended correctly: one row per customer.
+
+-- What is missing or risky
+
+-- total_revenue = NULL is never true. You need IS NULL.
+-- The expected output says total_revenue should be 0, not NULL.
+-- RIGHT JOIN works logically, but in interviews it is usually cleaner to start from customers and keep all customers.
+-- Your final result will likely return no rows because of the NULL comparison.
+
+-- Granularity correctness: Good intention.
+-- Join correctness / duplication risk: Mostly okay, but less clean than needed.
+
+-- Would this pass in a real interview?
+
+-- No, because the NULL logic breaks the result.
+
+-- Cleaner version:
+
+WITH customers_stats AS (
+    SELECT 
+        c.customer_id,
+        COUNT(f.sale_id) AS total_orders,
+        COALESCE(SUM(f.net_amount), 0) AS total_revenue
+    FROM dw.dim_customer c
+    LEFT JOIN dw.fact_sales f 
+        ON c.customer_sk = f.customer_sk 
+    GROUP BY c.customer_id
+)
+SELECT 
+    customer_id,
+    total_orders,
+    total_revenue,
+    'No Purchases' AS customer_status
+FROM customers_stats
+WHERE total_orders = 0;
  
 
 
