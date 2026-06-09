@@ -420,12 +420,66 @@ WHERE total_orders = 0;
 
 -- Request 5
 -- Question:
+
+-- Request 5/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10 min
+--
+-- Business question:
+-- The product team wants to understand which product categories are contributing the most to revenue in the current year available in the data.
+--
+-- Return each product category’s revenue and its percentage contribution to total revenue for that year.
+--
+-- Expected output:
+-- - category_name
+-- - category_revenue
+-- - revenue_share_pct
+--
+-- Sort from highest revenue share to lowest.
+--
+-- Granularity:
+-- One row per product category.
  
 
 -- My SQL:
+
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+year_date AS(
+    SELECT
+        DATE_TRUNC('year', max_date) AS start_year,
+        DATE_TRUNC('year', max_date) + INTERVAL '1 year' AS finish_year
+    FROM max_dates
+),
+products_stats AS(
+    SELECT p.product_category AS category_name , SUM(f.net_amount) AS category_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN year_date y
+    WHERE d.full_date >= y.start_year AND d.full_date < y.finish_year
+    GROUP BY p.product_category
+),
+global_revenue AS(
+SELECT category_name , category_revenue ,
+SUM(category_revenue) OVER() AS total
+FROM products_stats
+)
+SELECT  category_name , category_revenue , 
+ROUND(category_revenue / NULLIF(total,0) * 100.0,2) AS revenue_share_pct
+FROM global_revenue
+ORDER BY revenue_share_pct DESC
  
 
 -- SQL Correction:
+
+--Verdict: Correct
+
+--Interview pass likelihood: Likely Pass
 
 
 -- Request 6
