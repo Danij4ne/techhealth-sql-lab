@@ -484,13 +484,150 @@ ORDER BY revenue_share_pct DESC
 
 -- Request 6
 -- Question:
+
+-- Request 6/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10 min
+--
+-- Business question:
+-- The regional managers want to know the top-selling product in each region during the last full year available in the data.
+--
+-- Return only the best-selling product for every region based on total revenue.
+--
+-- Expected output:
+-- - region_name
+-- - product_id
+-- - product_name
+-- - total_revenue
+--
+-- Granularity:
+-- One row per region.
  
 
 -- My SQL:
+
+
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+year_date AS(
+    SELECT
+        DATE_TRUNC('year', max_date) AS finish_year,
+        DATE_TRUNC('year', max_date) - INTERVAL '1 year' AS start_year
+    FROM max_dates
+),
+region_stats AS(
+    SELECT r.region_name , p.product_id, p.product_name , SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+    ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN year_date y
+    WHERE d.full_date >= y.start_year AND d.full_date < y.finish_year
+    GROUP BY r.region_name , p.product_id, p.product_name 
+),
+ranking AS(
+SELECT region_name , product_id , product_name, total_revenue, 
+DENSE_RANK() OVER(PARTITION BY region_name ORDER BY total_revenue DESC ) AS rank
+FROM region_stats
+)
+SELECT  region_name , product_id , product_name , total_revenue
+FROM ranking
+WHERE rank = 1
+ORDER BY region_name 
  
 
 -- SQL Correction:
 
+-- VERDICT
+
+-- Interview pass likelihood: Borderline
+
+-- What is good
+
+-- Correct aggregation by region and product.
+-- Correct use of ranking per region.
+-- Correct joins to product, region, and date.
+-- Correct final grain in normal cases.
+
+-- What is missing or risky
+
+-- The question says one row per region.
+-- With DENSE_RANK(), if two products tie for first place in a region,
+-- you return multiple rows for that region.
+
+-- For strict "one row per region", ROW_NUMBER() is safer.
+
+-- Your year logic is correct for last full year,
+-- not current year.
+
+-- Granularity correctness:
+-- Almost correct, but ties can break the required grain.
+
+-- Join correctness / duplication risk:
+-- Correct.
+
+-- Would this pass in a real interview?
+
+-- Probably partial because of the tie issue.
+
+-- Cleaner version:
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+year_date AS (
+    SELECT
+        DATE_TRUNC('year', max_date) AS finish_year,
+        DATE_TRUNC('year', max_date) - INTERVAL '1 year' AS start_year
+    FROM max_dates
+),
+region_stats AS (
+    SELECT 
+        r.region_name,
+        p.product_id,
+        p.product_name,
+        SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_region r
+        ON f.region_sk = r.region_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN year_date y
+    WHERE d.full_date >= y.start_year 
+      AND d.full_date < y.finish_year
+    GROUP BY 
+        r.region_name,
+        p.product_id,
+        p.product_name
+),
+ranking AS (
+    SELECT 
+        region_name,
+        product_id,
+        product_name,
+        total_revenue,
+        ROW_NUMBER() OVER (
+            PARTITION BY region_name 
+            ORDER BY total_revenue DESC, product_id
+        ) AS rn
+    FROM region_stats
+)
+SELECT  
+    region_name,
+    product_id,
+    product_name,
+    total_revenue
+FROM ranking
+WHERE rn = 1
+ORDER BY region_name;
 
 
 -- Request 7
