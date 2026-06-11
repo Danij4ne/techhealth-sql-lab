@@ -632,14 +632,66 @@ ORDER BY region_name;
 
 -- Request 7
 -- Question:
+
+-- Request 7/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 12 min
+--
+-- Business question:
+-- The finance team wants to track monthly revenue growth over the most recent six full months available in the data.
+--
+-- Return revenue by month, the previous month’s revenue, and the percentage growth compared with the previous month.
+--
+-- Expected output:
+-- - month_start
+-- - total_revenue
+-- - previous_month_revenue
+-- - revenue_growth_pct
+--
+-- Only include the most recent six full months.
+--
+-- Granularity:
+-- One row per month.
  
 
 -- My SQL:
- 
+
+
+
+WITH max_dates AS(
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_date AS(
+    SELECT
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '6 months' AS start_month
+    FROM max_dates
+),
+month_revenue AS(
+    SELECT DATE_TRUNC('month',d.full_date) AS month_start , SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN month_date m
+    WHERE d.full_date >= m.start_month AND d.full_date < m.finish_month
+    GROUP BY  DATE_TRUNC('month',d.full_date)
+),
+previous_month AS(
+SELECT month_start , total_revenue , LAG(total_revenue,1) OVER(ORDER BY month_start ) AS previous_month_revenue
+FROM month_revenue 
+)
+SELECT  month_start , total_revenue, previous_month_revenue,
+ROUND((total_revenue - previous_month_revenue) / NULLIF(previous_month_revenue,0) * 100.0,2) AS revenue_growth_pct
+FROM previous_month
+ORDER BY month_start
+
 
 -- SQL Correction:
 
+--Verdict: Correct
 
+--Interview pass likelihood: Likely Pass
 
 
 -- Request 8
