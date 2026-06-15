@@ -696,17 +696,73 @@ ORDER BY month_start
 
 -- Request 8
 -- Question:
+
+-- Request 8/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10 min
+--
+-- Business question:
+-- The operations team wants to monitor daily revenue trends during the last full month available in the data.
+--
+-- Return each day’s revenue and the cumulative revenue from the start of that month up to that day.
+--
+-- Expected output:
+-- - full_date
+-- - daily_revenue
+-- - cumulative_month_revenue
+--
+-- Granularity:
+-- One row per day.
  
 
 -- My SQL:
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_date AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM max_dates
+),
+month_revenue AS (
+    SELECT 
+        d.full_date,
+        SUM(f.net_amount) AS daily_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN month_date m
+    WHERE d.full_date >= m.start_month 
+      AND d.full_date < m.finish_month
+    GROUP BY d.full_date
+),
+cumulative_month AS (
+    SELECT 
+        full_date,
+        daily_revenue,
+        SUM(daily_revenue) OVER (
+            ORDER BY full_date
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS cumulative_month_revenue
+    FROM month_revenue
+)
+SELECT full_date, daily_revenue, cumulative_month_revenue
+FROM cumulative_month
+ORDER BY full_date;
  
 
 -- SQL Correction:
 
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 
 -- Request 9
 -- Question:
+
  
 
 -- My SQL:
