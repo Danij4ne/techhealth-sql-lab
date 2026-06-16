@@ -763,14 +763,63 @@ ORDER BY full_date;
 -- Request 9
 -- Question:
 
- 
+-- Request 9/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10 min
+--
+-- Business question:
+-- The finance team wants to compare each day’s revenue with the revenue from the previous calendar day during the last full month available in the data.
+--
+-- Return each day, its revenue, the previous day’s revenue, and the absolute difference.
+--
+-- Expected output:
+-- - full_date
+-- - daily_revenue
+-- - previous_day_revenue
+-- - revenue_difference
+--
+-- Only include days from the last full month.
+--
+-- Granularity:
+-- One row per day.
+
 
 -- My SQL:
+
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_date AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '1 month' AS start_month
+    FROM max_dates
+),
+month_revenue AS (
+    SELECT d.full_date , SUM(f.net_amount) AS daily_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN month_date m
+    WHERE  d.full_date >= m.start_month AND d.full_date  < m.finish_month
+    GROUP BY  d.full_date 
+) ,
+previous_day AS (
+    SELECT full_date , daily_revenue ,
+    LAG(daily_revenue,1) OVER(ORDER BY full_date) AS previous_day_revenue
+    FROM month_revenue
+)
+SELECT full_date , daily_revenue , previous_day_revenue,
+ROUND(daily_revenue - previous_day_revenue,2) AS revenue_difference
+FROM previous_day
+ORDER BY full_date
 
 
 -- SQL Correction:
  
-
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 -- Request 10
 -- Question:
