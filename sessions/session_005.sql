@@ -823,12 +823,70 @@ ORDER BY full_date
 
 -- Request 10
 -- Question:
+
+-- Request 10/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10 min
+--
+-- Business question:
+-- The revenue team wants to compare each product category’s revenue this month against the same category’s revenue in the previous month.
+--
+-- Return each category, current month revenue, previous month revenue, and the revenue difference.
+--
+-- Use the latest full month available in the data as the current month.
+--
+-- Expected output:
+-- - category_name
+-- - current_month_revenue
+-- - previous_month_revenue
+-- - revenue_difference
+--
+-- Granularity:
+-- One row per product category.
  
 
 -- My SQL:
 
+WITH max_dates AS (
+    SELECT MAX(full_date) AS max_date
+    FROM dw.dim_date
+),
+month_date AS (
+    SELECT
+        DATE_TRUNC('month', max_date) AS finish_month,
+        DATE_TRUNC('month', max_date) - INTERVAL '2 month' AS start_month
+    FROM max_dates
+),
+category_revenue AS(
+    SELECT p.product_category AS category_name , DATE_TRUNC('month', d.full_date) AS revenue_month, SUM(f.net_amount) AS revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+    ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+    ON f.date_sk = d.date_sk
+    CROSS JOIN  month_date m
+    WHERE  d.full_date >= m.start_month AND d.full_date < m.finish_month
+    GROUP BY p.product_category , DATE_TRUNC('month', d.full_date)
+) ,
+revenue_months AS(
+SELECT category_name, revenue_month, revenue  , 
+LAG(revenue,1) OVER(PARTITION BY category_name ORDER BY revenue_month) AS previous_month_revenue
+FROM category_revenue
+)
+SELECT category_name, revenue AS current_month_revenue, previous_month_revenue,
+ROUND(revenue - previous_month_revenue,2) AS revenue_difference
+FROM revenue_months
+WHERE revenue_month = (
+    SELECT finish_month - INTERVAL '1 month'
+    FROM month_date
+)
+ORDER BY category_name
+
 
 -- SQL Correction:
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
  
 
 
