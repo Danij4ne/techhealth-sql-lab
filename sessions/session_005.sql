@@ -892,13 +892,41 @@ ORDER BY category_name
 
 -- Request 11
 -- Question:
- 
+ -- Request 11/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10 min
+-- Main skill tested: First event, aggregation, customer behavior
+--
+-- Business question:
+-- The customer success team wants to know when each customer made their first completed purchase.
+--
+-- Return every customer who has made at least one completed purchase, along with the date of their first completed purchase.
+--
+-- Expected output:
+-- - customer_id
+-- - first_purchase_date
+--
+-- Granularity:
+-- One row per customer.
+
 
 -- My SQL:
 
 
+SELECT c.customer_id , MIN(d.full_date) AS first_purchase_date
+FROM dw.fact_sales f
+JOIN dw.dim_customer c
+ON f.customer_sk = c.customer_sk
+JOIN dw.dim_date d
+ON f.date_sk = d.date_sk
+GROUP BY c.customer_id 
+ORDER BY c.customer_id 
+
+
 -- SQL Correction:
  
+ --Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 
 -- Request 12
