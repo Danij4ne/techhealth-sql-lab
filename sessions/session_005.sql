@@ -912,7 +912,6 @@ ORDER BY category_name
 
 -- My SQL:
 
-
 SELECT c.customer_id , MIN(d.full_date) AS first_purchase_date
 FROM dw.fact_sales f
 JOIN dw.dim_customer c
@@ -931,13 +930,96 @@ ORDER BY c.customer_id
 
 -- Request 12
 -- Question:
+
+-- Request 12/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 10 min
+-- Main skill tested: Window functions, ranking, aggregation
+--
+-- Business question:
+-- The sales team wants to find the top-selling product in each product category during the last full month available in the data.
+--
+-- Return the product with the highest revenue in each category for that month.
+--
+-- Expected output:
+-- - category_name
+-- - product_id
+-- - product_name
+-- - total_revenue
+-- - category_rank
+--
+-- Only include completed sales.
+--
+-- Granularity:
+-- One row per category.
  
 
 -- My SQL:
 
+WITH max_date AS (
+    SELECT
+        MAX(d.full_date) AS max_full_date
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+),
+
+last_full_month AS (
+    SELECT
+        DATE_TRUNC('month', max_full_date) - INTERVAL '1 month' AS month_start,
+        DATE_TRUNC('month', max_full_date) AS month_end
+    FROM max_date
+),
+
+product_revenue AS (
+    SELECT
+        p.product_category AS category_name,
+        p.product_id,
+        p.product_name,
+        SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p
+        ON f.product_sk = p.product_sk
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    CROSS JOIN last_full_month lfm
+    WHERE d.full_date >= lfm.month_start
+      AND d.full_date < lfm.month_end
+    GROUP BY
+        p.product_category,
+        p.product_id,
+        p.product_name
+),
+
+ranked AS (
+    SELECT
+        category_name,
+        product_id,
+        product_name,
+        total_revenue,
+        RANK() OVER (
+            PARTITION BY category_name
+            ORDER BY total_revenue DESC
+        ) AS category_rank
+    FROM product_revenue
+)
+
+SELECT
+    category_name,
+    product_id,
+    product_name,
+    total_revenue,
+    category_rank
+FROM ranked
+WHERE category_rank = 1
+ORDER BY category_name;
+
 
 -- SQL Correction:
- 
+
+
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 
 -- Request 13
