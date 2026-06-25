@@ -1024,14 +1024,59 @@ ORDER BY category_name;
 
 -- Request 13
 -- Question:
+
+-- Request 13/25 [MID]
+-- Type: Realistic
+-- Estimated solve time: 8 min
+-- Main skill tested: Time comparison, monthly aggregation
+--
+-- Business question:
+-- The finance team wants to compare revenue month over month.
+--
+-- Return total revenue by month and show how much revenue changed compared with the previous month.
+--
+-- Expected output:
+-- - month_start
+-- - total_revenue
+-- - previous_month_revenue
+-- - revenue_change
+--
+-- Use all sales records.
+--
+-- Granularity:
+-- One row per month.
  
 
 -- My SQL:
 
+WITH monthly_revenue AS (
+    SELECT
+        DATE_TRUNC('month', d.full_date) AS month_start,
+        SUM(f.net_amount) AS total_revenue
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+    GROUP BY DATE_TRUNC('month', d.full_date)
+)
+
+SELECT
+    month_start,
+    total_revenue,
+    LAG(total_revenue) OVER (
+        ORDER BY month_start
+    ) AS previous_month_revenue,
+    total_revenue
+      - LAG(total_revenue) OVER (
+            ORDER BY month_start
+        ) AS revenue_change
+FROM monthly_revenue
+ORDER BY month_start;
+
 
 -- SQL Correction:
  
-
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 -- Request 14
 -- Question:
