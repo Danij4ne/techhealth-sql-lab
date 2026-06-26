@@ -1080,14 +1080,71 @@ ORDER BY month_start;
 
 -- Request 14
 -- Question:
+
+-- Request 14/25 [MID-HIGH]
+-- Type: Standard
+-- Estimated solve time: 12 min
+-- Main skill tested: Customers with no activity, safe LEFT JOIN, filtering by period
+--
+-- Business question:
+-- The retention team wants to find customers who did not make any purchase during the last full quarter available in the data.
+--
+-- Return all customers with zero sales in that quarter.
+--
+-- Expected output:
+-- - customer_id
+-- - total_sales_last_full_quarter
+--
+-- The sales value should be 0 for every returned customer.
+--
+-- Granularity:
+-- One row per customer.
  
 
 -- My SQL:
 
+WITH max_date AS (
+    SELECT
+        MAX(d.full_date) AS max_full_date
+    FROM dw.fact_sales f
+    JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+),
+
+last_full_quarter AS (
+    SELECT
+        DATE_TRUNC('quarter', max_full_date) - INTERVAL '3 months' AS quarter_start,
+        DATE_TRUNC('quarter', max_full_date) AS quarter_end
+    FROM max_date
+),
+
+customer_sales AS (
+    SELECT
+        c.customer_id,
+        COALESCE(SUM(f.net_amount), 0) AS total_sales_last_full_quarter
+    FROM dw.dim_customer c
+    CROSS JOIN last_full_quarter lfq
+    LEFT JOIN dw.fact_sales f
+        ON c.customer_sk = f.customer_sk
+    LEFT JOIN dw.dim_date d
+        ON f.date_sk = d.date_sk
+       AND d.full_date >= lfq.quarter_start
+       AND d.full_date < lfq.quarter_end
+    GROUP BY c.customer_id
+)
+
+SELECT
+    customer_id,
+    0 AS total_sales_last_full_quarter
+FROM customer_sales
+WHERE total_sales_last_full_quarter = 0
+ORDER BY customer_id;
+
 
 -- SQL Correction:
  
-
+--Verdict: Correct
+--Interview pass likelihood: Likely Pass
 
 -- Request 15
 -- Question:
